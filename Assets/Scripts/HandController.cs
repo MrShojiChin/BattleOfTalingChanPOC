@@ -1,14 +1,14 @@
-using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
 
+/// <summary>
+/// Manages one player's hand of cards.
+/// No longer a singleton — each Player owns their own HandController.
+/// </summary>
 public class HandController : MonoBehaviour
 {
-    public static HandController instance;
-    private void Awake()
-    {
-        instance = this;
-    }
+    // ── REMOVED: public static HandController instance; ──────────
+
     public List<Card> heldCards = new List<Card>();
 
     public Transform minPos, maxPos;
@@ -17,11 +17,6 @@ public class HandController : MonoBehaviour
     void Start()
     {
         SetCardPosistionsInHand();
-    }
-
-    void Update()
-    {
-
     }
 
     public void SetCardPosistionsInHand()

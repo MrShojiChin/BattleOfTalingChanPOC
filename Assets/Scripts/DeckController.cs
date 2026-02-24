@@ -1,63 +1,71 @@
 using UnityEngine;
-using UnityEngine.InputSystem;
 using System.Collections.Generic;
 
+/// <summary>
+/// Manages one player's deck.
+/// No longer a singleton — each Player owns their own DeckController.
+/// Drawing is now triggered by GameManager (not Space key).
+/// </summary>
 public class DeckController : MonoBehaviour
 {
-    public static DeckController instance;
+    // ── REMOVED: public static DeckController instance; ──────────
 
-    private void Awake()
-    {
-        instance = this;
-    }
+    /// <summary>Set by Player.Start() — knows which player owns this deck.</summary>
+    [HideInInspector] public Player owner;
 
-    // Change this to BaseCardSO so it accepts both Avatar and Magic
+    [Header("Deck List (assign in Inspector)")]
     public List<BaseCardSO> deckToUse = new List<BaseCardSO>();
 
-    private List<BaseCardSO> activeCards = new List<BaseCardSO>();
-
+    [Header("Card Prefabs")]
     public Card avatarCardPrefab;
     public Card magicCardPrefab;
+
+    private List<BaseCardSO> activeCards = new List<BaseCardSO>();
 
     void Start()
     {
         SetupDeck();
     }
 
-    void Update()
-    {
-        if(Keyboard.current.spaceKey.wasPressedThisFrame)
-        {
-            DrawCardToHand();
-        }
-    }
+    // ── REMOVED: Update() with Space key — GameManager handles draw timing ──
 
     public void SetupDeck()
     {
         activeCards.Clear();
 
         List<BaseCardSO> tempDeck = new List<BaseCardSO>();
-        tempDeck.AddRange(deckToUse); // Create a temporary copy of the deck to draw from
+        tempDeck.AddRange(deckToUse);
 
-        int interations = 0;
-        while(tempDeck.Count > 0 && interations < 500)
+        int iterations = 0;
+        while (tempDeck.Count > 0 && iterations < 500)
         {
             int selected = Random.Range(0, tempDeck.Count);
             activeCards.Add(tempDeck[selected]);
-            tempDeck.RemoveAt(selected); // Remove the card from the temp deck to avoid duplicates
-            interations++;
+            tempDeck.RemoveAt(selected);
+            iterations++;
         }
-
     }
 
+    /// <summary>
+    /// Draw the top card from this deck and add it to the OWNER's hand.
+    /// Tags the card with the owner's playerId so it knows who it belongs to.
+    /// </summary>
     public void DrawCardToHand()
     {
         if (activeCards.Count == 0)
         {
-            SetupDeck(); // Reshuffle the deck if we've run out of cards
+            // TODO: Rulebook says deck-out = instant loss. For now, reshuffle.
+            Debug.LogWarning($"[DeckController] {owner?.playerId} deck is empty — reshuffling.");
+            SetupDeck();
         }
 
-        // Choose the correct prefab based on the drawn card's type
+        if (owner == null || owner.hand == null)
+        {
+            Debug.LogError("[DeckController] Owner or owner.hand is null! Cannot draw.");
+            return;
+        }
+
+        // Draw the top card
         BaseCardSO drawnCard = activeCards[0];
         Card newCard = null;
 
@@ -74,10 +82,19 @@ public class DeckController : MonoBehaviour
             newCard.magicSO = magic;
         }
 
+        // Tag the card with its owner BEFORE setup
+        newCard.cardOwner = owner.playerId;
+
         newCard.SetupCard();
 
-        activeCards.RemoveAt(0); // Remove the drawn card from the active deck
+        activeCards.RemoveAt(0);
 
-        HandController.instance.AddCardToHand(newCard);
+        // Add to the OWNER's hand (not a global singleton)
+        owner.hand.AddCardToHand(newCard);
+
+        Debug.Log($"[Deck] {owner.playerId} drew {newCard.cardName}. Cards left: {activeCards.Count}");
     }
+
+    /// <summary>How many cards remain in this deck.</summary>
+    public int CardsRemaining => activeCards.Count;
 }

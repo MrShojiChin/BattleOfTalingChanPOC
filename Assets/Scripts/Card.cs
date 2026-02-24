@@ -37,6 +37,13 @@ public class Card : MonoBehaviour, IPointerEnterHandler, IPointerExitHandler, IP
     private Color pitchColor = Color.yellow;
     private Color readyColor = Color.green;
 
+    // ── OWNERSHIP ─────────────────────────────────────────────────
+    /// <summary>
+    /// Which player owns this card. Set by DeckController when drawn.
+    /// Used to find the correct HandController (no more singletons).
+    /// </summary>
+    public TurnPlayer cardOwner;
+
     // ── MOVEMENT ───────────────────────────────────────────────────
     private Vector3 targetPoint;
     private Quaternion targerRot;
@@ -48,18 +55,32 @@ public class Card : MonoBehaviour, IPointerEnterHandler, IPointerExitHandler, IP
 
     /// <summary>
     /// True when this card is being dragged by the player (following the mouse).
-    /// Only set for: free-cost avatars, magic cards, tribute cards being dragged to hell,
-    /// or the pending avatar in ReadyToPlace state.
     /// </summary>
     public bool isSelected;
 
-    private HandController theHC;
     private Image cardImage;
 
     public LayerMask whatIsDesktop, whatIsPlacement;
     private bool justPressed;
 
     public CardPlacePoint assignedPlace;
+
+    // ── OWNER'S HAND (lazy lookup — no more singleton) ────────────
+    private HandController _cachedHC;
+
+    /// <summary>
+    /// Returns the HandController of the player who owns this card.
+    /// Lazy-resolved on first access via GameManager.
+    /// </summary>
+    private HandController OwnerHand
+    {
+        get
+        {
+            if (_cachedHC == null && GameManager.instance != null)
+                _cachedHC = GameManager.instance.GetPlayer(cardOwner).hand;
+            return _cachedHC;
+        }
+    }
 
     // ════════════════════════════════════════════════════════════════
     //  SETUP
@@ -69,14 +90,12 @@ public class Card : MonoBehaviour, IPointerEnterHandler, IPointerExitHandler, IP
     {
         SetupCard();
 
-        theHC = FindFirstObjectByType<HandController>();
-
         cardImage = GetComponent<Image>();
         if (cardImage == null)
             cardImage = GetComponentInChildren<Image>();
 
-        if (theHC == null)
-            Debug.LogError($"{cardName}: HandController not found!");
+        if (OwnerHand == null)
+            Debug.LogError($"{cardName}: Owner's HandController not found!");
 
         if (cardImage == null)
             Debug.LogWarning($"{cardName}: Image component not found!");
@@ -133,17 +152,17 @@ public class Card : MonoBehaviour, IPointerEnterHandler, IPointerExitHandler, IP
 
     void Update()
     {
+        HandController theHC = OwnerHand;
+
         // ── HIGH-PRIORITY: Lock pending avatar in its raised position ──
         BattleController bc = BattleController.instance;
         if (bc != null && bc.pendingAvatar == this && !isSelected)
         {
-            // Force the raised position every frame so nothing (hand repositioning, etc.) can pull it down
             if (theHC != null && handPosition < theHC.cardPositions.Count)
             {
                 targetPoint = theHC.cardPositions[handPosition] + new Vector3(0f, 1.5f, 0.5f);
                 targerRot = Quaternion.identity;
             }
-            // Skip all other Update logic — this card is untouchable until summon ends
             transform.position = Vector3.Lerp(transform.position, targetPoint, moveSpeed * Time.deltaTime);
             transform.rotation = Quaternion.RotateTowards(transform.rotation, targerRot, rotateSpeed * Time.deltaTime);
             return;
@@ -154,14 +173,12 @@ public class Card : MonoBehaviour, IPointerEnterHandler, IPointerExitHandler, IP
             Vector2 mousePos = Mouse.current.position.ReadValue();
             Ray ray = Camera.main.ScreenPointToRay(mousePos);
 
-            // Follow cursor on desktop layer
             RaycastHit hit;
             if (Physics.Raycast(ray, out hit, 100f, whatIsDesktop))
             {
                 MoveToPoint(hit.point, Quaternion.identity);
             }
 
-            // LEFT CLICK — attempt to drop
             if (Mouse.current.leftButton.wasPressedThisFrame && !justPressed)
             {
                 if (Physics.Raycast(ray, out hit, 100f, whatIsPlacement))
@@ -182,7 +199,6 @@ public class Card : MonoBehaviour, IPointerEnterHandler, IPointerExitHandler, IP
                 }
             }
 
-            // RIGHT CLICK — cancel drag, return to hand
             if (Mouse.current.rightButton.wasPressedThisFrame)
             {
                 ReturnToHand();
@@ -191,7 +207,6 @@ public class Card : MonoBehaviour, IPointerEnterHandler, IPointerExitHandler, IP
 
         justPressed = false;
 
-        // Movement interpolation
         transform.position = Vector3.Lerp(transform.position, targetPoint, moveSpeed * Time.deltaTime);
         transform.rotation = Quaternion.RotateTowards(transform.rotation, targerRot, rotateSpeed * Time.deltaTime);
     }
@@ -209,15 +224,13 @@ public class Card : MonoBehaviour, IPointerEnterHandler, IPointerExitHandler, IP
         {
             if (bc.TryPayTribute(this, point))
             {
-                // Accepted — card is now a tribute sitting in hell
                 isSelected = false;
-                EnableInteraction();                       // Must stay clickable for right-click recall
-                targerRot = Quaternion.identity;           // Flat/face-up in hell
+                EnableInteraction();
+                targerRot = Quaternion.identity;
                 Debug.Log($"{cardName} tributed successfully.");
             }
             else
             {
-                // Rejected — return to hand
                 Debug.Log($"{cardName} rejected as tribute, returning to hand.");
                 ReturnToHand();
             }
@@ -250,12 +263,12 @@ public class Card : MonoBehaviour, IPointerEnterHandler, IPointerExitHandler, IP
             if (valid)
             {
                 PlaceOnBoard(point);
+                HandController theHC = OwnerHand;
                 if (theHC != null) theHC.RemoveCardFromHand(this);
                 return;
             }
         }
 
-        // ── DEFAULT: invalid drop → return to hand ──
         Debug.Log($"{cardName} dropped on invalid point, returning to hand.");
         ReturnToHand();
     }
@@ -267,11 +280,10 @@ public class Card : MonoBehaviour, IPointerEnterHandler, IPointerExitHandler, IP
     public void OnPointerEnter(PointerEventData eventData)
     {
         BattleController bc = BattleController.instance;
+        HandController theHC = OwnerHand;
 
-        // Pending avatar stays in its popped-up position — don't touch it
         if (this == bc.pendingAvatar) return;
 
-        // During CostStep/ReadyToPlace, hover non-pending hand cards to show they're draggable
         if ((bc.currentState == SummonState.CostStep || bc.currentState == SummonState.ReadyToPlace)
             && inHand && !isSelected)
         {
@@ -280,7 +292,6 @@ public class Card : MonoBehaviour, IPointerEnterHandler, IPointerExitHandler, IP
             return;
         }
 
-        // Normal idle hover
         if (bc.currentState == SummonState.Idle && inHand && !isSelected)
         {
             if (theHC != null && handPosition < theHC.cardPositions.Count)
@@ -291,8 +302,8 @@ public class Card : MonoBehaviour, IPointerEnterHandler, IPointerExitHandler, IP
     public void OnPointerExit(PointerEventData eventData)
     {
         BattleController bc = BattleController.instance;
+        HandController theHC = OwnerHand;
 
-        // Pending avatar stays in its popped-up position — never drop it back on mouse exit
         if (this == bc.pendingAvatar) return;
 
         if ((bc.currentState == SummonState.CostStep || bc.currentState == SummonState.ReadyToPlace)
@@ -319,29 +330,24 @@ public class Card : MonoBehaviour, IPointerEnterHandler, IPointerExitHandler, IP
         // ── RIGHT-CLICK: Cancellation ──────────────────────────────
         if (isRightClick)
         {
-            // Right-click on a tribute card at the hell point → return just that tribute
             if (bc.currentTributes.Contains(this))
             {
                 bc.ReturnTribute(this);
                 return;
             }
 
-            // Right-click on the pending avatar → full cancel
             if (this == bc.pendingAvatar)
             {
                 bc.CancelFullSummon();
                 return;
             }
 
-            // Right-click while dragging → return to hand (handled in Update)
             return;
         }
 
         // ── LEFT-CLICK ─────────────────────────────────────────────
         if (!isLeftClick) return;
 
-        // --- STATE: ReadyToPlace ---
-        // Click the unlocked avatar to start dragging it to a board slot
         if (bc.currentState == SummonState.ReadyToPlace && this == bc.pendingAvatar && inHand)
         {
             isSelected = true;
@@ -351,13 +357,10 @@ public class Card : MonoBehaviour, IPointerEnterHandler, IPointerExitHandler, IP
             return;
         }
 
-        // --- STATE: CostStep ---
         if (bc.currentState == SummonState.CostStep)
         {
-            // Can't click the pending avatar to drag during cost step
             if (this == bc.pendingAvatar) return;
 
-            // Click a hand card to start dragging it to the hell point as tribute
             if (inHand)
             {
                 isSelected = true;
@@ -368,25 +371,20 @@ public class Card : MonoBehaviour, IPointerEnterHandler, IPointerExitHandler, IP
             return;
         }
 
-        // --- STATE: Idle ---
         if (bc.currentState == SummonState.Idle && inHand)
         {
-            // Phase 1: Left-click an Avatar → initiate summon or drag if free
             if (cardType == CardType.Avatar)
             {
                 bool summonInitiated = bc.InitiateSummon(this);
                 if (!summonInitiated)
                 {
-                    // Cost == 0: go straight to normal drag
                     isSelected = true;
                     DisableInteraction();
                     justPressed = true;
                 }
-                // If summonInitiated == true, card is now the pendingAvatar (not draggable yet)
                 return;
             }
 
-            // Magic card in Idle → normal drag to board
             isSelected = true;
             DisableInteraction();
             justPressed = true;
@@ -446,6 +444,7 @@ public class Card : MonoBehaviour, IPointerEnterHandler, IPointerExitHandler, IP
         inHand = true;
         EnableInteraction();
 
+        HandController theHC = OwnerHand;
         if (theHC != null && handPosition < theHC.cardPositions.Count)
         {
             MoveToPoint(theHC.cardPositions[handPosition], theHC.minPos.rotation);

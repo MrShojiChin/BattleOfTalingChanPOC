@@ -13,12 +13,17 @@ public enum TurnPhase { Draw, Main, Battle, End }
 
 /// <summary>
 /// Central game state controller.
-/// Manages turn order and phase transitions.
+/// Manages turn order, phase transitions, and player references.
 /// Tells UIController to update the HUD whenever state changes.
 /// </summary>
 public class GameManager : MonoBehaviour
 {
     public static GameManager instance;
+
+    // ── PLAYERS ────────────────────────────────────────────────────
+    [Header("Players (assign in Inspector)")]
+    public Player player1;
+    public Player player2;
 
     // ── GAME STATE ─────────────────────────────────────────────────
     [Header("Current State (Read Only)")]
@@ -36,6 +41,22 @@ public class GameManager : MonoBehaviour
     {
         StartGame();
     }
+
+    // ════════════════════════════════════════════════════════════════
+    //  PLAYER HELPERS
+    // ════════════════════════════════════════════════════════════════
+
+    /// <summary>Returns the Player object for the current turn.</summary>
+    public Player CurrentPlayerObj
+        => currentPlayer == TurnPlayer.Player1 ? player1 : player2;
+
+    /// <summary>Returns the opponent Player object.</summary>
+    public Player OpponentPlayerObj
+        => currentPlayer == TurnPlayer.Player1 ? player2 : player1;
+
+    /// <summary>Returns the Player object for a given TurnPlayer enum.</summary>
+    public Player GetPlayer(TurnPlayer p)
+        => p == TurnPlayer.Player1 ? player1 : player2;
 
     // ════════════════════════════════════════════════════════════════
     //  GAME START
@@ -64,30 +85,36 @@ public class GameManager : MonoBehaviour
         currentPhase = TurnPhase.Draw;
         UIController.instance.UpdateHUD(currentPlayer, currentPhase);
 
-        // Draw logic (rulebook)
-        var hand = HandController.instance;
-        var deck = DeckController.instance;
+        // Use CURRENT player's hand and deck (no more singletons)
+        Player cp = CurrentPlayerObj;
+
+        if (cp == null || cp.hand == null || cp.deck == null)
+        {
+            Debug.LogError("[GameManager] Current player, hand, or deck is null!");
+            EnterMainPhase();
+            return;
+        }
 
         if (isFirstTurn && currentPlayer == TurnPlayer.Player1)
         {
             // First turn: Player 1 draws 2
-            deck.DrawCardToHand();
-            deck.DrawCardToHand();
+            cp.deck.DrawCardToHand();
+            cp.deck.DrawCardToHand();
         }
         else
         {
-            int currentHandSize = hand.heldCards.Count;
+            int currentHandSize = cp.hand.heldCards.Count;
             if (currentHandSize < 3)
             {
                 // Draw up to 3
                 int cardsToDraw = 3 - currentHandSize;
                 for (int i = 0; i < cardsToDraw; i++)
-                    deck.DrawCardToHand();
+                    cp.deck.DrawCardToHand();
             }
             else
             {
                 // Draw exactly 1
-                deck.DrawCardToHand();
+                cp.deck.DrawCardToHand();
             }
         }
 
