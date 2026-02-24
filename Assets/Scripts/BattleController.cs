@@ -54,6 +54,13 @@ public class BattleController : MonoBehaviour
         if (currentState != SummonState.Idle) return false;
         if (avatar.cardType != CardType.Avatar) return false;
 
+        // Phase check: summoning only allowed during Main Phase
+        if (GameManager.instance != null && !GameManager.instance.IsMainPhase())
+        {
+            Debug.Log("[BattleController] Cannot summon outside Main Phase!");
+            return false;
+        }
+
         // Free summon — let Card handle normal drag
         if (avatar.cost <= 0) return false;
 

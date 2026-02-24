@@ -65,19 +65,24 @@ public class DeckController : MonoBehaviour
             return;
         }
 
+        // Spawn position: use the owner's deck zone on the board (not this transform)
+        Vector3 spawnPos = (owner.deckZone != null)
+            ? owner.deckZone.transform.position
+            : transform.position;
+
         // Draw the top card
         BaseCardSO drawnCard = activeCards[0];
         Card newCard = null;
 
         if (drawnCard is AvatarCardSO avatar)
         {
-            newCard = Instantiate(avatarCardPrefab, transform.position, Quaternion.identity);
+            newCard = Instantiate(avatarCardPrefab, spawnPos, Quaternion.identity);
             newCard.cardType = CardType.Avatar;
             newCard.avatarSO = avatar;
         }
         else if (drawnCard is MagicCardSO magic)
         {
-            newCard = Instantiate(magicCardPrefab, transform.position, Quaternion.identity);
+            newCard = Instantiate(magicCardPrefab, spawnPos, Quaternion.identity);
             newCard.cardType = CardType.Magic;
             newCard.magicSO = magic;
         }

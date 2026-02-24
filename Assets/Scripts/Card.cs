@@ -348,6 +348,25 @@ public class Card : MonoBehaviour, IPointerEnterHandler, IPointerExitHandler, IP
         // ── LEFT-CLICK ─────────────────────────────────────────────
         if (!isLeftClick) return;
 
+        // ── PHASE CHECK: only allow card play during Main Phase ──
+        GameManager gm = GameManager.instance;
+        if (gm != null && !gm.IsMainPhase())
+        {
+            // Exception: allow continuing a summon already in progress
+            if (bc.currentState == SummonState.Idle)
+            {
+                Debug.Log($"[Card] {cardName}: Can only play cards during Main Phase!");
+                return;
+            }
+        }
+
+        // ── OWNERSHIP CHECK: only the current player can play their cards ──
+        if (gm != null && cardOwner != gm.currentPlayer && inHand)
+        {
+            Debug.Log($"[Card] {cardName}: Not your card! Belongs to {cardOwner}.");
+            return;
+        }
+
         if (bc.currentState == SummonState.ReadyToPlace && this == bc.pendingAvatar && inHand)
         {
             isSelected = true;
