@@ -160,6 +160,10 @@ public class BattleController : MonoBehaviour
         pendingAvatar.EnableInteraction();
         pendingAvatar.MoveToPoint(placePoint.transform.position, Quaternion.identity);
 
+        // Record turn number for summon sickness
+        if (GameManager.instance != null)
+            pendingAvatar.turnPlaced = GameManager.instance.turnNumber;
+
         HandController hc = CurrentHand;
         if (hc != null) hc.RemoveCardFromHand(pendingAvatar);
 

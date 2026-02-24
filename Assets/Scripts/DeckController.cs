@@ -102,4 +102,30 @@ public class DeckController : MonoBehaviour
 
     /// <summary>How many cards remain in this deck.</summary>
     public int CardsRemaining => activeCards.Count;
+
+    // ════════════════════════════════════════════════════════════════
+    //  MULLIGAN HELPERS
+    // ════════════════════════════════════════════════════════════════
+
+    /// <summary>
+    /// Return a card's ScriptableObject to the BOTTOM of the deck (for mulligan).
+    /// The card is placed without shuffling — shuffle separately after all returns.
+    /// </summary>
+    public void ReturnCardToBottom(BaseCardSO cardSO)
+    {
+        activeCards.Add(cardSO);  // Add to end = bottom of deck
+    }
+
+    /// <summary>
+    /// Shuffle the deck using Fisher-Yates.
+    /// Called after mulligan swaps are complete.
+    /// </summary>
+    public void ShuffleDeck()
+    {
+        for (int i = activeCards.Count - 1; i > 0; i--)
+        {
+            int j = Random.Range(0, i + 1);
+            (activeCards[i], activeCards[j]) = (activeCards[j], activeCards[i]);
+        }
+    }
 }

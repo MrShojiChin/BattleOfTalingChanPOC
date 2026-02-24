@@ -173,18 +173,23 @@ MonoBehaviour:
   avatarSO: {fileID: 11400000, guid: 39e87abfdad173d4189beb261811d403, type: 2}
   magicSO: {fileID: 0}
   cost: 6
+  power: 5
   gem: 2
   symbol: 
   description: 
   cardName: 
   avatarColor: 0
   gemColor: 0
+  isTapped: 0
+  turnPlaced: -1
   characterArt: {fileID: 8538424796172334071}
   nameText: {fileID: 0}
   descText: {fileID: 0}
   costText: {fileID: 0}
   pitchHighlightImage: {fileID: 0}
   readyHighlightImage: {fileID: 0}
+  attackHighlightImage: {fileID: 0}
+  cardOwner: 0
   moveSpeed: 5
   rotateSpeed: 540
   inHand: 0

@@ -65,6 +65,24 @@ public class UIController : MonoBehaviour
     public TMP_Text nextPhaseButtonText;
 
     // ════════════════════════════════════════════════════════════════
+    //  5. COMBAT UI
+    // ════════════════════════════════════════════════════════════════
+
+    [Header("── Combat UI ──────────────────────")]
+    public GameObject combatPanel;        // Panel shown during Battle Phase
+    public TMP_Text   combatInfoText;     // "Select attacker" / combat results
+
+    // ════════════════════════════════════════════════════════════════
+    //  6. MULLIGAN UI
+    // ════════════════════════════════════════════════════════════════
+
+    [Header("── Mulligan UI ──────────────────────")]
+    public GameObject mulliganPanel;        // Panel shown during setup mulligan
+    public TMP_Text   mulliganInfoText;     // "Player 1 — Select cards to swap..."
+    public Button     mulliganConfirmButton; // "Swap Selected"
+    public Button     mulliganKeepButton;    // "Keep All"
+
+    // ════════════════════════════════════════════════════════════════
     //  SETUP
     // ════════════════════════════════════════════════════════════════
 
@@ -76,10 +94,18 @@ public class UIController : MonoBehaviour
     private void Start()
     {
         HidePaymentUI();
+        HideCombatUI();
+        HideMulliganUI();
 
         // Wire the Next Phase button to GameManager
         if (nextPhaseButton != null)
             nextPhaseButton.onClick.AddListener(OnNextPhaseClicked);
+
+        // Wire the Mulligan buttons to GameManager
+        if (mulliganConfirmButton != null)
+            mulliganConfirmButton.onClick.AddListener(() => GameManager.instance.OnMulliganConfirmed());
+        if (mulliganKeepButton != null)
+            mulliganKeepButton.onClick.AddListener(() => GameManager.instance.OnMulliganSkipped());
     }
 
     // ════════════════════════════════════════════════════════════════
@@ -152,9 +178,13 @@ public class UIController : MonoBehaviour
 
         if (nextPhaseButtonText == null) return;
 
+        // P1 Turn 1: can't enter Battle Phase, so show "End Phase →" during Main
+        GameManager gm = GameManager.instance;
+        bool p1SkipBattle = gm != null && gm.isFirstTurn && gm.currentPlayer == TurnPlayer.Player1;
+
         nextPhaseButtonText.text = phase switch
         {
-            TurnPhase.Main   => "Battle Phase →",
+            TurnPhase.Main   => p1SkipBattle ? "End Phase →" : "Battle Phase →",
             TurnPhase.Battle => "End Phase →",
             _                => "Next →"
         };
@@ -198,5 +228,45 @@ public class UIController : MonoBehaviour
 
         if (playerGemPaidText != null) playerGemPaidText.text = "";
         if (summonStatusText  != null) summonStatusText.text  = "";
+    }
+
+    // ════════════════════════════════════════════════════════════════
+    //  COMBAT UI  (Battle Phase info panel)
+    // ════════════════════════════════════════════════════════════════
+
+    /// <summary>Show the combat panel with a status message.</summary>
+    public void ShowCombatUI(string message)
+    {
+        if (combatPanel != null) combatPanel.SetActive(true);
+        if (combatInfoText != null) combatInfoText.text = message;
+    }
+
+    /// <summary>Hide the combat panel entirely.</summary>
+    public void HideCombatUI()
+    {
+        if (combatPanel != null) combatPanel.SetActive(false);
+        if (combatInfoText != null) combatInfoText.text = "";
+    }
+
+    // ════════════════════════════════════════════════════════════════
+    //  MULLIGAN UI  (Setup Phase — card swap)
+    // ════════════════════════════════════════════════════════════════
+
+    /// <summary>Show the mulligan panel with instructions for the current player.</summary>
+    public void ShowMulliganUI(string message)
+    {
+        if (mulliganPanel != null) mulliganPanel.SetActive(true);
+        if (mulliganInfoText != null) mulliganInfoText.text = message;
+
+        // Hide the next phase button during setup
+        if (nextPhaseButton != null)
+            nextPhaseButton.gameObject.SetActive(false);
+    }
+
+    /// <summary>Hide the mulligan panel entirely.</summary>
+    public void HideMulliganUI()
+    {
+        if (mulliganPanel != null) mulliganPanel.SetActive(false);
+        if (mulliganInfoText != null) mulliganInfoText.text = "";
     }
 }

@@ -1,4 +1,5 @@
 using UnityEngine;
+using System.Collections.Generic;
 
 /// <summary>
 /// Whose turn it is.
@@ -30,6 +31,12 @@ public class GameManager : MonoBehaviour
     public TurnPlayer currentPlayer = TurnPlayer.Player1;
     public TurnPhase  currentPhase  = TurnPhase.Draw;
     public bool       isFirstTurn   = true;
+    public int        turnNumber    = 1;
+
+    // ── SETUP / MULLIGAN ─────────────────────────────────────────
+    [Header("Setup Phase")]
+    public bool isSetupPhase = false;
+    private int mulliganStep = 0;   // 0 = P1 mulligan, 1 = P2 mulligan
 
     // ── SETUP ──────────────────────────────────────────────────────
     private void Awake()
@@ -66,7 +73,137 @@ public class GameManager : MonoBehaviour
     {
         currentPlayer = TurnPlayer.Player1;
         isFirstTurn   = true;
-        EnterDrawPhase();
+        SetupPhase();
+    }
+
+    // ════════════════════════════════════════════════════════════════
+    //  SETUP PHASE — Draw 5 each + Mulligan
+    // ════════════════════════════════════════════════════════════════
+
+    /// <summary>
+    /// Pre-game setup per rulebook:
+    ///   1. Both players draw 5 cards
+    ///   2. P1 mulligans (swap any cards → bottom of deck → redraw → shuffle)
+    ///   3. P2 mulligans
+    ///   4. Game begins — P1 skips Draw Phase on Turn 1
+    /// </summary>
+    private void SetupPhase()
+    {
+        isSetupPhase = true;
+
+        // Draw 5 for each player
+        for (int i = 0; i < 5; i++)
+            player1.deck.DrawCardToHand();
+        for (int i = 0; i < 5; i++)
+            player2.deck.DrawCardToHand();
+
+        // Start P1 mulligan
+        mulliganStep = 0;
+        currentPlayer = TurnPlayer.Player1;
+        UIController.instance.ShowMulliganUI("Player 1 — Select cards to swap, then press Swap. Or press Keep All.");
+        Debug.Log("[GameManager] Setup: Both players drew 5 cards. P1 mulligan begins.");
+    }
+
+    /// <summary>
+    /// Called by UIController's "Swap Selected" button.
+    /// Returns marked cards to deck bottom, redraws, shuffles.
+    /// </summary>
+    public void OnMulliganConfirmed()
+    {
+        Player cp = CurrentPlayerObj;
+
+        // Collect cards marked for mulligan
+        List<Card> markedCards = new List<Card>();
+        foreach (Card card in cp.hand.heldCards)
+        {
+            if (card != null && card.markedForMulligan)
+                markedCards.Add(card);
+        }
+
+        int swapCount = markedCards.Count;
+
+        // Return each marked card's SO to bottom of deck, then destroy the GO
+        foreach (Card card in markedCards)
+        {
+            BaseCardSO so = (card.cardType == CardType.Avatar)
+                ? (BaseCardSO)card.avatarSO
+                : (BaseCardSO)card.magicSO;
+
+            cp.deck.ReturnCardToBottom(so);
+        }
+
+        // Remove from hand and destroy GameObjects
+        cp.hand.RemoveCardsFromHand(markedCards);
+        foreach (Card card in markedCards)
+            Destroy(card.gameObject);
+
+        // Draw back the same number
+        for (int i = 0; i < swapCount; i++)
+            cp.deck.DrawCardToHand();
+
+        // Shuffle the deck after mulligan
+        cp.deck.ShuffleDeck();
+
+        Debug.Log($"[GameManager] {currentPlayer} swapped {swapCount} cards.");
+
+        AdvanceMulligan();
+    }
+
+    /// <summary>
+    /// Called by UIController's "Keep All" button.
+    /// Skips the mulligan for this player.
+    /// </summary>
+    public void OnMulliganSkipped()
+    {
+        // Clear any accidental highlights
+        Player cp = CurrentPlayerObj;
+        foreach (Card card in cp.hand.heldCards)
+        {
+            if (card != null)
+            {
+                card.markedForMulligan = false;
+                card.SetPitchHighlight(false);
+            }
+        }
+
+        Debug.Log($"[GameManager] {currentPlayer} kept all cards.");
+        AdvanceMulligan();
+    }
+
+    /// <summary>Move from P1 mulligan → P2 mulligan → Finish Setup.</summary>
+    private void AdvanceMulligan()
+    {
+        if (mulliganStep == 0)
+        {
+            // P1 done → P2 mulligan
+            mulliganStep = 1;
+            currentPlayer = TurnPlayer.Player2;
+            UIController.instance.ShowMulliganUI("Player 2 — Select cards to swap, then press Swap. Or press Keep All.");
+            Debug.Log("[GameManager] P2 mulligan begins.");
+        }
+        else
+        {
+            // P2 done → finish setup
+            FinishSetup();
+        }
+    }
+
+    /// <summary>
+    /// End the setup phase and begin Turn 1.
+    /// P1 skips Draw Phase → goes directly to Main Phase.
+    /// </summary>
+    private void FinishSetup()
+    {
+        isSetupPhase = false;
+        UIController.instance.HideMulliganUI();
+
+        currentPlayer = TurnPlayer.Player1;
+        isFirstTurn   = true;
+        turnNumber    = 1;
+
+        // P1 skips Draw Phase on Turn 1 → go straight to Main
+        Debug.Log("[GameManager] Setup complete! Turn 1 — P1 starts at Main Phase.");
+        EnterMainPhase();
     }
 
     // ════════════════════════════════════════════════════════════════
@@ -75,10 +212,10 @@ public class GameManager : MonoBehaviour
 
     /// <summary>
     /// Draw Phase:
+    /// - P1 Turn 1: skip draw entirely (already has 5 from setup)
     /// - If hand has fewer than 3 cards → draw until 3
     /// - If hand has 3+ cards → draw 1
-    /// - First turn for Player 1 → draw 2 instead
-    /// - Avatars wake up (untap) — TODO when avatar tapped state is added
+    /// - Avatars wake up (untap / ลุก) at the start of their owner's turn
     /// </summary>
     private void EnterDrawPhase()
     {
@@ -95,27 +232,30 @@ public class GameManager : MonoBehaviour
             return;
         }
 
+        // ── Untap all current player's avatars (wake up / ลุก) ──
+        UntapAllAvatars(cp);
+
+        // P1 skips draw on Turn 1 (they already have 5 from setup)
         if (isFirstTurn && currentPlayer == TurnPlayer.Player1)
         {
-            // First turn: Player 1 draws 2
-            cp.deck.DrawCardToHand();
-            cp.deck.DrawCardToHand();
+            Debug.Log("[GameManager] P1 Turn 1 — skip draw (already has 5 from setup).");
+            EnterMainPhase();
+            return;
+        }
+
+        // Normal draw rules
+        int currentHandSize = cp.hand.heldCards.Count;
+        if (currentHandSize < 3)
+        {
+            // Draw up to 3
+            int cardsToDraw = 3 - currentHandSize;
+            for (int i = 0; i < cardsToDraw; i++)
+                cp.deck.DrawCardToHand();
         }
         else
         {
-            int currentHandSize = cp.hand.heldCards.Count;
-            if (currentHandSize < 3)
-            {
-                // Draw up to 3
-                int cardsToDraw = 3 - currentHandSize;
-                for (int i = 0; i < cardsToDraw; i++)
-                    cp.deck.DrawCardToHand();
-            }
-            else
-            {
-                // Draw exactly 1
-                cp.deck.DrawCardToHand();
-            }
+            // Draw exactly 1
+            cp.deck.DrawCardToHand();
         }
 
         // Auto-advance to Main Phase after drawing
@@ -143,6 +283,11 @@ public class GameManager : MonoBehaviour
     {
         currentPhase = TurnPhase.Battle;
         UIController.instance.UpdateHUD(currentPlayer, currentPhase);
+
+        // Start combat selection
+        if (CombatController.instance != null)
+            CombatController.instance.BeginBattlePhase();
+
         Debug.Log($"[GameManager] {currentPlayer} — BATTLE PHASE");
     }
 
@@ -170,11 +315,12 @@ public class GameManager : MonoBehaviour
     private void SwitchTurn()
     {
         isFirstTurn   = false;
+        turnNumber++;
         currentPlayer = (currentPlayer == TurnPlayer.Player1)
                         ? TurnPlayer.Player2
                         : TurnPlayer.Player1;
 
-        Debug.Log($"[GameManager] Turn switched → {currentPlayer}");
+        Debug.Log($"[GameManager] Turn #{turnNumber} switched → {currentPlayer}");
         EnterDrawPhase();
     }
 
@@ -190,8 +336,23 @@ public class GameManager : MonoBehaviour
     {
         switch (currentPhase)
         {
-            case TurnPhase.Main:   EnterBattlePhase(); break;
-            case TurnPhase.Battle: EnterEndPhase();    break;
+            case TurnPhase.Main:
+                // P1 cannot enter Battle Phase on Turn 1 (rulebook)
+                if (isFirstTurn && currentPlayer == TurnPlayer.Player1)
+                {
+                    Debug.Log("[GameManager] P1 Turn 1 — skip Battle Phase (rulebook).");
+                    EnterEndPhase();
+                }
+                else
+                {
+                    EnterBattlePhase();
+                }
+                break;
+            case TurnPhase.Battle:
+                if (CombatController.instance != null)
+                    CombatController.instance.EndBattlePhase();
+                EnterEndPhase();
+                break;
             default: break;
         }
     }
@@ -209,4 +370,20 @@ public class GameManager : MonoBehaviour
     /// <summary>Returns a display-friendly name for the current player.</summary>
     public string CurrentPlayerName()
         => currentPlayer == TurnPlayer.Player1 ? "Player 1" : "Player 2";
+
+    // ════════════════════════════════════════════════════════════════
+    //  AVATAR MANAGEMENT
+    // ════════════════════════════════════════════════════════════════
+
+    /// <summary>Untap (wake up / ลุก) all of a player's avatars on the board.</summary>
+    private void UntapAllAvatars(Player player)
+    {
+        foreach (var zone in player.avatarZones)
+        {
+            if (zone != null && zone.activeCard != null)
+            {
+                zone.activeCard.SetTapped(false);
+            }
+        }
+    }
 }

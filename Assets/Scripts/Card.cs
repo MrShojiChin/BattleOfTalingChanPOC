@@ -17,12 +17,21 @@ public class Card : MonoBehaviour, IPointerEnterHandler, IPointerExitHandler, IP
 
     [Header("Live variables (runtime)")]
     public int cost;
+    public int power;
     public int gem;
     public string symbol;
     public string description;
     public string cardName;
     public CardColor avatarColor;
     public CardColor gemColor;
+
+    // ── BATTLE STATE ──────────────────────────────────────────────
+    [Header("Battle State")]
+    public bool isTapped;          // นอน (sleeping/tapped) — already attacked this turn
+    public int  turnPlaced = -1;   // Turn number when placed on board (for summon sickness)
+
+    // ── MULLIGAN ─────────────────────────────────────────────────
+    [HideInInspector] public bool markedForMulligan;
 
     [Header("UI")]
     public Image characterArt;
@@ -33,9 +42,11 @@ public class Card : MonoBehaviour, IPointerEnterHandler, IPointerExitHandler, IP
     [Header("Highlights")]
     public Image pitchHighlightImage;           // Border/glow for "pending" state (yellow)
     public Image readyHighlightImage;           // Border/glow for "ready to place" state (green)
+    public Image attackHighlightImage;          // Border/glow for "selected attacker" (red)
     private Color normalColor = Color.white;
     private Color pitchColor = Color.yellow;
     private Color readyColor = Color.green;
+    private Color attackColor = Color.red;
 
     // ── OWNERSHIP ─────────────────────────────────────────────────
     /// <summary>
@@ -120,6 +131,7 @@ public class Card : MonoBehaviour, IPointerEnterHandler, IPointerExitHandler, IP
             description = avatarSO.description;
             cost = avatarSO.cost;
             gem = avatarSO.gem;
+            power = avatarSO.power;
             symbol = avatarSO.symbol;
             avatarColor = avatarSO.avatarColor;
             gemColor = avatarSO.gemColor;
@@ -279,6 +291,9 @@ public class Card : MonoBehaviour, IPointerEnterHandler, IPointerExitHandler, IP
 
     public void OnPointerEnter(PointerEventData eventData)
     {
+        // During setup, mulligan handles all card positioning
+        if (GameManager.instance != null && GameManager.instance.isSetupPhase) return;
+
         BattleController bc = BattleController.instance;
         HandController theHC = OwnerHand;
 
@@ -301,6 +316,9 @@ public class Card : MonoBehaviour, IPointerEnterHandler, IPointerExitHandler, IP
 
     public void OnPointerExit(PointerEventData eventData)
     {
+        // During setup, mulligan handles all card positioning
+        if (GameManager.instance != null && GameManager.instance.isSetupPhase) return;
+
         BattleController bc = BattleController.instance;
         HandController theHC = OwnerHand;
 
@@ -326,6 +344,27 @@ public class Card : MonoBehaviour, IPointerEnterHandler, IPointerExitHandler, IP
         BattleController bc = BattleController.instance;
         bool isLeftClick = eventData.button == PointerEventData.InputButton.Left;
         bool isRightClick = eventData.button == PointerEventData.InputButton.Right;
+
+        // ── SETUP/MULLIGAN: toggle card selection for swap ────────
+        if (GameManager.instance != null && GameManager.instance.isSetupPhase)
+        {
+            if (inHand && cardOwner == GameManager.instance.currentPlayer)
+            {
+                if (isLeftClick)
+                    ToggleMulliganSelection();
+                else if (isRightClick && markedForMulligan)
+                    ToggleMulliganSelection(); // Right-click cancels selection
+            }
+            return; // No other interactions during setup
+        }
+
+        // ── BATTLE PHASE: route all clicks to CombatController ────
+        if (GameManager.instance != null && GameManager.instance.IsBattlePhase())
+        {
+            if (!inHand) // Only board cards respond during Battle Phase
+                CombatController.instance.HandleCardClick(this, isRightClick);
+            return; // No other card logic during Battle Phase
+        }
 
         // ── RIGHT-CLICK: Cancellation ──────────────────────────────
         if (isRightClick)
@@ -422,6 +461,11 @@ public class Card : MonoBehaviour, IPointerEnterHandler, IPointerExitHandler, IP
         inHand = false;
         EnableInteraction();
         MoveToPoint(point.transform.position, Quaternion.identity);
+
+        // Record turn number for summon sickness
+        if (GameManager.instance != null)
+            turnPlaced = GameManager.instance.turnNumber;
+
         Debug.Log($"{cardName} ({cardType}) placed at: {point.name}");
     }
 
@@ -442,6 +486,52 @@ public class Card : MonoBehaviour, IPointerEnterHandler, IPointerExitHandler, IP
     {
         if (readyHighlightImage != null)
             readyHighlightImage.color = on ? readyColor : normalColor;
+    }
+
+    public void SetAttackHighlight(bool on)
+    {
+        if (attackHighlightImage != null)
+            attackHighlightImage.color = on ? attackColor : normalColor;
+    }
+
+    // ── MULLIGAN TOGGLE ─────────────────────────────────────────
+    /// <summary>
+    /// Toggle this card's selection for mulligan swap.
+    /// Yellow highlight + slight lift = marked for swap.
+    /// </summary>
+    private void ToggleMulliganSelection()
+    {
+        markedForMulligan = !markedForMulligan;
+        SetPitchHighlight(markedForMulligan);  // Yellow glow = marked
+
+        // Visual feedback: fly card above the ground when marked, back down when unmarked
+        HandController hc = OwnerHand;
+        if (hc != null && handPosition < hc.cardPositions.Count)
+        {
+            Vector3 pos = hc.cardPositions[handPosition];
+            if (markedForMulligan)
+                pos += new Vector3(0f, 1.5f, 0.5f); // Fly up + slightly forward
+            MoveToPoint(pos, hc.minPos.rotation);
+        }
+
+        Debug.Log($"[Mulligan] {cardName} {(markedForMulligan ? "MARKED" : "unmarked")} for swap.");
+    }
+
+    // ── TAPPED (นอน) ──────────────────────────────────────────────
+    /// <summary>
+    /// Tap (lay down) or untap (stand up) an avatar on the board.
+    /// Tapped avatars cannot attack again this turn.
+    /// </summary>
+    public void SetTapped(bool tapped)
+    {
+        isTapped = tapped;
+        if (assignedPlace != null)
+        {
+            Quaternion rot = tapped
+                ? Quaternion.Euler(0f, -90f, 0f)  // Rotate Y axis = lay sideways (horizontal)
+                : Quaternion.identity;
+            MoveToPoint(assignedPlace.transform.position, rot);
+        }
     }
 
     // ── INTERACTION ────────────────────────────────────────────────
