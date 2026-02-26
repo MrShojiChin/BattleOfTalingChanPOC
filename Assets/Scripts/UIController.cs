@@ -91,6 +91,15 @@ public class UIController : MonoBehaviour
     public TMP_Text   gameOverText;         // "PLAYER X WINS!" message
 
     // ════════════════════════════════════════════════════════════════
+    //  8. DISCARD UI (End Phase — hand limit)
+    // ════════════════════════════════════════════════════════════════
+
+    [Header("── Discard UI ──────────────────────")]
+    public GameObject discardPanel;          // Panel shown when hand > 7
+    public TMP_Text   discardInfoText;       // "Player X — Discard N card(s)"
+    public Button     discardConfirmButton;  // "Discard Selected"
+
+    // ════════════════════════════════════════════════════════════════
     //  SETUP
     // ════════════════════════════════════════════════════════════════
 
@@ -105,6 +114,7 @@ public class UIController : MonoBehaviour
         HideCombatUI();
         HideMulliganUI();
         HideGameOverUI();
+        HideDiscardUI();
 
         // Wire the Next Phase button to GameManager
         if (nextPhaseButton != null)
@@ -115,6 +125,10 @@ public class UIController : MonoBehaviour
             mulliganConfirmButton.onClick.AddListener(() => GameManager.instance.OnMulliganConfirmed());
         if (mulliganKeepButton != null)
             mulliganKeepButton.onClick.AddListener(() => GameManager.instance.OnMulliganSkipped());
+
+        // Wire the Discard button to GameManager
+        if (discardConfirmButton != null)
+            discardConfirmButton.onClick.AddListener(() => GameManager.instance.OnDiscardConfirmed());
     }
 
     // ════════════════════════════════════════════════════════════════
@@ -300,5 +314,55 @@ public class UIController : MonoBehaviour
     {
         if (gameOverPanel != null) gameOverPanel.SetActive(false);
         if (gameOverText != null) gameOverText.text = "";
+    }
+
+    // ════════════════════════════════════════════════════════════════
+    //  DISCARD UI  (End Phase — hand limit = 7)
+    // ════════════════════════════════════════════════════════════════
+
+    /// <summary>Show the discard panel when hand exceeds 7 cards.</summary>
+    public void ShowDiscardUI(string message)
+    {
+        if (discardPanel != null) discardPanel.SetActive(true);
+        if (discardInfoText != null) discardInfoText.text = message;
+
+        // Hide the next phase button during discard
+        if (nextPhaseButton != null)
+            nextPhaseButton.gameObject.SetActive(false);
+
+        // Disable confirm button until correct count is selected
+        if (discardConfirmButton != null)
+            discardConfirmButton.interactable = false;
+    }
+
+    /// <summary>Hide the discard panel entirely.</summary>
+    public void HideDiscardUI()
+    {
+        if (discardPanel != null) discardPanel.SetActive(false);
+        if (discardInfoText != null) discardInfoText.text = "";
+    }
+
+    /// <summary>
+    /// Called by Card.ToggleDiscardSelection() whenever a card is marked/unmarked.
+    /// Updates the counter text and enables/disables the confirm button.
+    /// </summary>
+    public void UpdateDiscardCount()
+    {
+        GameManager gm = GameManager.instance;
+        if (gm == null || !gm.isDiscardPhase) return;
+
+        Player cp = gm.CurrentPlayerObj;
+        int handSize = cp.hand.heldCards.Count;
+        int required = handSize - 7;
+        int selected = cp.hand.GetMarkedForDiscard().Count;
+
+        if (discardInfoText != null)
+            discardInfoText.text =
+                $"{gm.CurrentPlayerName()} — Discard {required} card(s)\n" +
+                $"Selected: {selected} / {required}";
+
+        // Enable confirm only when the exact count is selected
+        if (discardConfirmButton != null)
+            discardConfirmButton.interactable = (selected == required);
     }
 }

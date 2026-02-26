@@ -114,4 +114,132 @@ public class Player : MonoBehaviour
         }
         return null;
     }
+
+    // ════════════════════════════════════════════════════════════════
+    //  RUNTIME ZONE AUTO-DISCOVERY
+    // ════════════════════════════════════════════════════════════════
+
+    /// <summary>
+    /// If any Inspector zone refs are null, find them by name in the scene.
+    /// Called once at game start, before LIFE cards are dealt.
+    /// Only fills nulls — does NOT overwrite valid Inspector assignments.
+    /// </summary>
+    public void AutoDiscoverZones()
+    {
+        string prefix = playerId == TurnPlayer.Player1 ? "P1" : "P2";
+
+        // ── LIFE ZONES (5 slots) ──
+        for (int i = 0; i < lifeZones.Length; i++)
+        {
+            if (lifeZones[i] == null)
+            {
+                string zoneName = $"{prefix}_Life_{i + 1}";
+                lifeZones[i] = FindZoneByName(zoneName);
+                if (lifeZones[i] != null)
+                    Debug.Log($"[Player] {playerId}: Auto-discovered {zoneName}");
+                else
+                    Debug.LogWarning($"[Player] {playerId}: Could not find zone '{zoneName}' in scene!");
+            }
+        }
+
+        // ── AVATAR ZONES (4 slots) ──
+        for (int i = 0; i < avatarZones.Length; i++)
+        {
+            if (avatarZones[i] == null)
+            {
+                string zoneName = $"{prefix}_Avatar_{i + 1}";
+                avatarZones[i] = FindZoneByName(zoneName);
+                if (avatarZones[i] != null)
+                    Debug.Log($"[Player] {playerId}: Auto-discovered {zoneName}");
+                else
+                    Debug.LogWarning($"[Player] {playerId}: Could not find zone '{zoneName}' in scene!");
+            }
+        }
+
+        // ── SINGLE ZONES ──
+        if (deckZone == null)
+        {
+            deckZone = FindZoneByName($"{prefix}_Deck");
+            if (deckZone != null) Debug.Log($"[Player] {playerId}: Auto-discovered {prefix}_Deck");
+        }
+        if (constructZone == null)
+        {
+            constructZone = FindZoneByName($"{prefix}_Construct");
+            if (constructZone != null) Debug.Log($"[Player] {playerId}: Auto-discovered {prefix}_Construct");
+        }
+        if (magicZone == null)
+        {
+            magicZone = FindZoneByName($"{prefix}_Magic");
+            if (magicZone != null) Debug.Log($"[Player] {playerId}: Auto-discovered {prefix}_Magic");
+        }
+        if (hellZone == null)
+        {
+            hellZone = FindZoneByName($"{prefix}_Hell");
+            if (hellZone != null) Debug.Log($"[Player] {playerId}: Auto-discovered {prefix}_Hell");
+        }
+    }
+
+    /// <summary>Find a CardPlacePoint in the scene by exact GameObject name.</summary>
+    private CardPlacePoint FindZoneByName(string zoneName)
+    {
+        GameObject go = GameObject.Find(zoneName);
+        if (go != null)
+        {
+            CardPlacePoint cpp = go.GetComponent<CardPlacePoint>();
+            if (cpp != null) return cpp;
+        }
+
+        // Fallback: search all CardPlacePoints (handles renamed parents)
+        foreach (var zone in FindObjectsOfType<CardPlacePoint>())
+        {
+            if (zone.gameObject.name == zoneName)
+                return zone;
+        }
+        return null;
+    }
+
+    // ════════════════════════════════════════════════════════════════
+    //  RUNTIME LIFE ZONE SPACING
+    // ════════════════════════════════════════════════════════════════
+
+    /// <summary>
+    /// Reposition LIFE zone GameObjects to use the specified spacing.
+    /// Calculates center from current positions and redistributes along Z-axis.
+    /// </summary>
+    public void AdjustLifeZoneSpacing(float spacing = 2.0f)
+    {
+        int validCount = 0;
+        Vector3 centerPos = Vector3.zero;
+        for (int i = 0; i < lifeZones.Length; i++)
+        {
+            if (lifeZones[i] != null)
+            {
+                centerPos += lifeZones[i].transform.position;
+                validCount++;
+            }
+        }
+
+        if (validCount == 0)
+        {
+            Debug.LogWarning($"[Player] {playerId}: No LIFE zones found — cannot adjust spacing.");
+            return;
+        }
+
+        centerPos /= validCount;
+
+        // Redistribute: 5 zones centered around the midpoint
+        float startZ = centerPos.z - ((lifeZones.Length - 1) * spacing) / 2f;
+
+        for (int i = 0; i < lifeZones.Length; i++)
+        {
+            if (lifeZones[i] != null)
+            {
+                Vector3 pos = lifeZones[i].transform.position;
+                pos.z = startZ + spacing * i;
+                lifeZones[i].transform.position = pos;
+            }
+        }
+
+        Debug.Log($"[Player] {playerId}: LIFE zone spacing set to {spacing} (center Z={centerPos.z:F2})");
+    }
 }

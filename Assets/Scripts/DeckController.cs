@@ -162,6 +162,11 @@ public class DeckController : MonoBehaviour
         // Face-down — card back shows (rotation handles visuals, no art hiding)
         newCard.SetFaceDown(true);
 
+        // Disable zone collider so the card's own BoxCollider receives Battle Phase clicks
+        // (Life zones are never used for drag-drop, so the collider serves no purpose)
+        BoxCollider zoneCol = lifeZone.GetComponent<BoxCollider>();
+        if (zoneCol != null) zoneCol.enabled = false;
+
         Debug.Log($"[Deck] {owner.playerId} LIFE card '{lifeSO.cardName}' dealt to {lifeZone.name}.");
         return newCard;
     }

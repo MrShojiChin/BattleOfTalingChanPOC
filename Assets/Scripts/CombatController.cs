@@ -1,4 +1,5 @@
 using UnityEngine;
+using UnityEngine.InputSystem;
 
 /// <summary>
 /// Handles all Battle Phase combat logic.
@@ -11,6 +12,10 @@ using UnityEngine;
 ///   5. Repeat or End Phase
 ///
 /// Separate from BattleController (which handles summoning in Main Phase).
+///
+/// NOTE: Life cards can't be detected through the EventSystem (their rotated
+///       Canvas blocks GraphicRaycaster). Instead, Update() uses a direct
+///       world-space proximity check to detect clicks on LIFE cards.
 /// </summary>
 public enum CombatState { Idle, SelectingAttacker, SelectingTarget }
 
@@ -26,6 +31,96 @@ public class CombatController : MonoBehaviour
     private void Awake()
     {
         instance = this;
+    }
+
+    // ════════════════════════════════════════════════════════════════
+    //  LIFE CARD CLICK DETECTION (direct raycast — bypasses EventSystem)
+    // ════════════════════════════════════════════════════════════════
+
+    /// <summary>
+    /// During Battle Phase, detects left-clicks on LIFE cards by casting a ray
+    /// from the camera onto the board plane and checking proximity to each LIFE card.
+    /// This bypasses Unity's EventSystem which can't detect the rotated cards.
+    /// </summary>
+    private void Update()
+    {
+        // Only active during Battle Phase and when combat is in progress
+        if (combatState == CombatState.Idle) return;
+        GameManager gm = GameManager.instance;
+        if (gm == null || !gm.IsBattlePhase()) return;
+        if (Mouse.current == null) return;
+
+        // Detect left-click
+        if (Mouse.current.leftButton.wasPressedThisFrame)
+        {
+            Card lifeCard = RaycastForLifeCard();
+            if (lifeCard != null)
+            {
+                Debug.Log($"[Combat] Direct-detected click on LIFE card '{lifeCard.cardName}'");
+                HandleCardClick(lifeCard, false);
+            }
+        }
+        // Detect right-click (for cancel)
+        else if (Mouse.current.rightButton.wasPressedThisFrame)
+        {
+            Card lifeCard = RaycastForLifeCard();
+            if (lifeCard != null)
+            {
+                HandleCardClick(lifeCard, true);
+            }
+        }
+    }
+
+    /// <summary>
+    /// Casts a ray from the camera through the mouse position onto the board plane,
+    /// then checks if any LIFE card is close enough to count as a click.
+    /// Returns the closest LIFE card hit, or null.
+    /// </summary>
+    private Card RaycastForLifeCard()
+    {
+        Camera cam = Camera.main;
+        if (cam == null) return null;
+
+        Ray ray = cam.ScreenPointToRay(Mouse.current.position.ReadValue());
+
+        // Intersect the ray with the board plane (Y ≈ 0)
+        // LIFE cards sit at approximately Y = 0 on the board
+        Plane boardPlane = new Plane(Vector3.up, Vector3.zero);
+        if (!boardPlane.Raycast(ray, out float distance)) return null;
+
+        Vector3 worldClickPos = ray.GetPoint(distance);
+
+        // Check all LIFE cards on both players
+        Card closest = null;
+        float closestDist = float.MaxValue;
+        float clickRadius = 1.2f; // How close the click must be (generous for horizontal cards)
+
+        GameManager gm = GameManager.instance;
+        Player[] players = { gm.player1, gm.player2 };
+
+        foreach (Player p in players)
+        {
+            if (p == null || p.lifeZones == null) continue;
+            foreach (CardPlacePoint zone in p.lifeZones)
+            {
+                if (zone == null || zone.activeCard == null) continue;
+                Card card = zone.activeCard;
+                if (!card.isLifeCard) continue;
+
+                // Use XZ distance (ignoring Y)
+                float dx = worldClickPos.x - card.transform.position.x;
+                float dz = worldClickPos.z - card.transform.position.z;
+                float dist = Mathf.Sqrt(dx * dx + dz * dz);
+
+                if (dist < clickRadius && dist < closestDist)
+                {
+                    closestDist = dist;
+                    closest = card;
+                }
+            }
+        }
+
+        return closest;
     }
 
     // ════════════════════════════════════════════════════════════════
@@ -104,13 +199,19 @@ public class CombatController : MonoBehaviour
         // LIFE cards can never be used as attackers
         if (card.isLifeCard)
         {
-            Debug.Log($"[Combat] {card.cardName} is a LIFE card — can't attack with it.");
+            // Show UI feedback so the player knows the click registered
+            if (card.cardOwner != gm.currentPlayer)
+                UIController.instance.ShowCombatUI("Select YOUR Avatar first, then click enemy LIFE card!");
+            else
+                UIController.instance.ShowCombatUI("Can't attack with LIFE cards! Select an Avatar.");
+            Debug.Log($"[Combat] {card.cardName} is a LIFE card — can't attack with it. (owner={card.cardOwner}, current={gm.currentPlayer})");
             return;
         }
 
         // Must be YOUR avatar, on the board
         if (card.cardOwner != gm.currentPlayer)
         {
+            UIController.instance.ShowCombatUI("Select YOUR Avatar to attack with first!");
             Debug.Log($"[Combat] {card.cardName} is not your card.");
             return;
         }
@@ -202,6 +303,7 @@ public class CombatController : MonoBehaviour
         if (card.isLifeCard && card.isFaceDown)
         {
             Player op = gm.OpponentPlayerObj;
+            Debug.Log($"[Combat] Target is LIFE card '{card.cardName}' (faceDown={card.isFaceDown}). Enemy avatars on field: {op.AvatarsOnField}");
 
             // Can only attack LIFE cards when no enemy avatars exist
             if (op.AvatarsOnField > 0)
@@ -213,6 +315,7 @@ public class CombatController : MonoBehaviour
             }
 
             // Resolve LIFE card attack (flip, no power comparison)
+            Debug.Log($"[Combat] Resolving LIFE card attack: {selectedAttacker.cardName} → {card.cardName}");
             ResolveLifeCardAttack(selectedAttacker, card);
             return;
         }

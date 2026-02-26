@@ -90,4 +90,12 @@ public class HandController : MonoBehaviour
         heldCards.Add(cardToAdd);
         SetCardPosistionsInHand();
     }
+
+    /// <summary>
+    /// Returns all cards in hand that are marked for end-of-turn discard.
+    /// </summary>
+    public List<Card> GetMarkedForDiscard()
+    {
+        return heldCards.FindAll(c => c.markedForDiscard);
+    }
 }

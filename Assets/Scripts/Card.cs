@@ -36,8 +36,9 @@ public class Card : MonoBehaviour, IPointerEnterHandler, IPointerExitHandler, IP
     public bool isLifeCard;       // This card is placed in a LIFE zone
     public bool isFaceDown;       // LIFE card hasn't been flipped yet
 
-    // ── MULLIGAN ─────────────────────────────────────────────────
+    // ── MULLIGAN / DISCARD ──────────────────────────────────────
     [HideInInspector] public bool markedForMulligan;
+    [HideInInspector] public bool markedForDiscard;
 
     [Header("UI")]
     public Image characterArt;
@@ -379,6 +380,19 @@ public class Card : MonoBehaviour, IPointerEnterHandler, IPointerExitHandler, IP
         bool isLeftClick = eventData.button == PointerEventData.InputButton.Left;
         bool isRightClick = eventData.button == PointerEventData.InputButton.Right;
 
+        // ── END PHASE DISCARD: toggle card selection for discard ──
+        if (GameManager.instance != null && GameManager.instance.isDiscardPhase)
+        {
+            if (inHand && cardOwner == GameManager.instance.currentPlayer)
+            {
+                if (isLeftClick)
+                    ToggleDiscardSelection();
+                else if (isRightClick && markedForDiscard)
+                    ToggleDiscardSelection(); // Right-click cancels selection
+            }
+            return; // No other interactions during discard
+        }
+
         // ── SETUP/MULLIGAN: toggle card selection for swap ────────
         if (GameManager.instance != null && GameManager.instance.isSetupPhase)
         {
@@ -395,8 +409,12 @@ public class Card : MonoBehaviour, IPointerEnterHandler, IPointerExitHandler, IP
         // ── LIFE CARDS: never draggable, only clickable in Battle Phase ──
         if (isLifeCard)
         {
+            Debug.Log($"[Card] LIFE card '{cardName}' clicked! Owner={cardOwner}, isFaceDown={isFaceDown}, IsBattle={GameManager.instance?.IsBattlePhase()}");
+
             if (GameManager.instance != null && GameManager.instance.IsBattlePhase())
                 CombatController.instance.HandleCardClick(this, isRightClick);
+            else
+                Debug.Log($"[Card] LIFE card '{cardName}' clicked outside Battle Phase — ignored.");
             return; // LIFE cards only respond during Battle Phase
         }
 
@@ -557,6 +575,32 @@ public class Card : MonoBehaviour, IPointerEnterHandler, IPointerExitHandler, IP
         }
 
         Debug.Log($"[Mulligan] {cardName} {(markedForMulligan ? "MARKED" : "unmarked")} for swap.");
+    }
+
+    // ── DISCARD TOGGLE (End Phase — hand limit) ───────────────────
+    /// <summary>
+    /// Toggle this card's selection for end-of-turn discard.
+    /// Yellow highlight + slight lift = marked for discard.
+    /// </summary>
+    private void ToggleDiscardSelection()
+    {
+        markedForDiscard = !markedForDiscard;
+        SetPitchHighlight(markedForDiscard);  // Yellow glow = marked
+
+        // Visual feedback: fly card above the ground when marked
+        HandController hc = OwnerHand;
+        if (hc != null && handPosition < hc.cardPositions.Count)
+        {
+            Vector3 pos = hc.cardPositions[handPosition];
+            if (markedForDiscard)
+                pos += new Vector3(0f, 1.5f, 0.5f); // Fly up + slightly forward
+            MoveToPoint(pos, hc.minPos.rotation);
+        }
+
+        Debug.Log($"[Discard] {cardName} {(markedForDiscard ? "MARKED" : "unmarked")} for discard.");
+
+        // Update the UI counter so the player knows how many they've selected
+        UIController.instance?.UpdateDiscardCount();
     }
 
     // ── TAPPED (นอน) ──────────────────────────────────────────────

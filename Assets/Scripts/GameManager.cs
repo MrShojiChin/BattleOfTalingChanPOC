@@ -38,6 +38,10 @@ public class GameManager : MonoBehaviour
     public bool isSetupPhase = false;
     private int mulliganStep = 0;   // 0 = P1 mulligan, 1 = P2 mulligan
 
+    // ── DISCARD (End Phase) ────────────────────────────────────
+    [Header("Discard Phase")]
+    public bool isDiscardPhase = false;
+
     // ── GAME OVER ────────────────────────────────────────────────
     [Header("Game Over")]
     public bool isGameOver = false;
@@ -96,6 +100,14 @@ public class GameManager : MonoBehaviour
     {
         isSetupPhase = true;
         isGameOver   = false;
+
+        // ── Auto-discover any missing zone references (fixes broken Inspector refs) ──
+        player1.AutoDiscoverZones();
+        player2.AutoDiscoverZones();
+
+        // ── Adjust LIFE zone spacing for horizontal cards ──
+        player1.AdjustLifeZoneSpacing(1.35f);
+        player2.AdjustLifeZoneSpacing(1.35f);
 
         // Deal 5 LIFE cards face-down for each player (from deck top, before hand draw)
         DealLifeCards(player1);
@@ -318,9 +330,73 @@ public class GameManager : MonoBehaviour
         UIController.instance.UpdateHUD(currentPlayer, currentPhase);
         Debug.Log($"[GameManager] {currentPlayer} — END PHASE");
 
-        // TODO: Enforce discard-to-7 when hand limit UI is added
+        // ── DISCARD-TO-7: check hand limit ──
+        Player cp = CurrentPlayerObj;
+        int handSize = cp.hand.heldCards.Count;
 
-        // Pass the turn
+        if (handSize > 7)
+        {
+            int discardCount = handSize - 7;
+            isDiscardPhase = true;
+            Debug.Log($"[GameManager] {currentPlayer} has {handSize} cards — must discard {discardCount}.");
+            UIController.instance.ShowDiscardUI(
+                $"{CurrentPlayerName()} — Discard {discardCount} card(s)\n(hand limit = 7)");
+            return; // Wait for player to confirm discard
+        }
+
+        // Hand is within limit — pass the turn
+        SwitchTurn();
+    }
+
+    /// <summary>
+    /// Called by the Discard UI "Confirm" button.
+    /// Moves marked cards from hand to the Hell Zone, then passes the turn.
+    /// </summary>
+    public void OnDiscardConfirmed()
+    {
+        Player cp = CurrentPlayerObj;
+        int required = cp.hand.heldCards.Count - 7;
+
+        // Collect marked cards
+        List<Card> toDiscard = cp.hand.GetMarkedForDiscard();
+
+        if (toDiscard.Count != required)
+        {
+            Debug.LogWarning($"[GameManager] Need to discard {required} but {toDiscard.Count} selected!");
+            UIController.instance.ShowDiscardUI(
+                $"Select exactly {required} card(s) to discard!\n(You selected {toDiscard.Count})");
+            return;
+        }
+
+        // Remove from hand
+        cp.hand.RemoveCardsFromHand(toDiscard);
+
+        // Send each card to the Hell Zone
+        foreach (Card card in toDiscard)
+        {
+            card.markedForDiscard = false;
+            card.SetPitchHighlight(false);
+            card.inHand = false;
+
+            if (cp.hellZone != null)
+                cp.hellZone.AddCard(card);
+
+            Debug.Log($"[Discard] {card.cardName} discarded to Hell Zone.");
+        }
+
+        // Clear any remaining highlights (safety)
+        foreach (Card card in cp.hand.heldCards)
+        {
+            card.markedForDiscard = false;
+            card.SetPitchHighlight(false);
+        }
+
+        isDiscardPhase = false;
+        UIController.instance.HideDiscardUI();
+
+        Debug.Log($"[GameManager] {currentPlayer} discarded {toDiscard.Count} card(s). Hand now: {cp.hand.heldCards.Count}");
+
+        // Now pass the turn
         SwitchTurn();
     }
 
