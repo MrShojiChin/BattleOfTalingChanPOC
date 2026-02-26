@@ -18,4 +18,4 @@ MonoBehaviour:
   gem: 1
   symbol: 
   gemColor: 0
-  magicType: 0
+  magicType: 1

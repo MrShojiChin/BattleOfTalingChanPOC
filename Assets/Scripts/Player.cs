@@ -77,8 +77,25 @@ public class Player : MonoBehaviour
             int count = 0;
             foreach (var zone in lifeZones)
             {
-                if (zone != null && zone.activeCard != null)
-                    count++;    // TODO: check faceUp flag when LIFE card system is added
+                if (zone != null && zone.activeCard != null
+                    && zone.activeCard.isLifeCard && !zone.activeCard.isFaceDown)
+                    count++;
+            }
+            return count;
+        }
+    }
+
+    /// <summary>Count how many LIFE cards are still face-down (intact/undamaged).</summary>
+    public int UnflippedLifeCards
+    {
+        get
+        {
+            int count = 0;
+            foreach (var zone in lifeZones)
+            {
+                if (zone != null && zone.activeCard != null
+                    && zone.activeCard.isLifeCard && zone.activeCard.isFaceDown)
+                    count++;
             }
             return count;
         }

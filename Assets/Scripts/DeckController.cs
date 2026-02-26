@@ -19,8 +19,13 @@ public class DeckController : MonoBehaviour
     [Header("Card Prefabs")]
     public Card avatarCardPrefab;
     public Card magicCardPrefab;
+    public Card lifeCardPrefab;
+
+    [Header("LIFE Cards (separate from main deck — 5 per player)")]
+    public List<LifeCardSO> lifeDeckToUse = new List<LifeCardSO>();
 
     private List<BaseCardSO> activeCards = new List<BaseCardSO>();
+    private int lifeCardIndex = 0;  // Tracks how many LIFE cards have been dealt
 
     void Start()
     {
@@ -102,6 +107,64 @@ public class DeckController : MonoBehaviour
 
     /// <summary>How many cards remain in this deck.</summary>
     public int CardsRemaining => activeCards.Count;
+
+    // ════════════════════════════════════════════════════════════════
+    //  LIFE CARD DEALING
+    // ════════════════════════════════════════════════════════════════
+
+    /// <summary>
+    /// Deal a LIFE card from the separate lifeDeckToUse list (NOT the main deck).
+    /// Uses lifeCardPrefab and LifeCardSO. Called during game setup.
+    /// LIFE cards are their own card type — not Avatar or Magic.
+    /// </summary>
+    public Card DrawCardToLifeZone(CardPlacePoint lifeZone)
+    {
+        if (lifeCardIndex >= lifeDeckToUse.Count)
+        {
+            Debug.LogWarning($"[DeckController] {owner?.playerId} no more LIFE cards to deal (have {lifeDeckToUse.Count}, need {lifeCardIndex + 1}).");
+            return null;
+        }
+
+        if (owner == null)
+        {
+            Debug.LogError("[DeckController] Owner is null! Cannot deal LIFE card.");
+            return null;
+        }
+
+        if (lifeCardPrefab == null)
+        {
+            Debug.LogError("[DeckController] lifeCardPrefab is not assigned!");
+            return null;
+        }
+
+        // Get the next LIFE card SO from the separate pool
+        LifeCardSO lifeSO = lifeDeckToUse[lifeCardIndex];
+        lifeCardIndex++;
+
+        // Spawn at the life zone — LIFE cards are horizontal + face-down (card back up)
+        Vector3 spawnPos = lifeZone.transform.position;
+        Quaternion lifeRot = Quaternion.Euler(180f, -90f, 0f);  // Horizontal + face-down
+        Card newCard = Instantiate(lifeCardPrefab, spawnPos, lifeRot);
+        newCard.MoveToPoint(spawnPos, lifeRot);   // Pin card to zone (prevents drift to 0,0,0)
+        newCard.cardType = CardType.Life;
+        newCard.lifeCardSO = lifeSO;
+
+        // Tag ownership
+        newCard.cardOwner = owner.playerId;
+        newCard.SetupCard();
+
+        // Place in LIFE zone (single-card slot)
+        lifeZone.activeCard = newCard;
+        newCard.assignedPlace = lifeZone;
+        newCard.inHand = false;
+        newCard.isLifeCard = true;
+
+        // Face-down — card back shows (rotation handles visuals, no art hiding)
+        newCard.SetFaceDown(true);
+
+        Debug.Log($"[Deck] {owner.playerId} LIFE card '{lifeSO.cardName}' dealt to {lifeZone.name}.");
+        return newCard;
+    }
 
     // ════════════════════════════════════════════════════════════════
     //  MULLIGAN HELPERS

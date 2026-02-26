@@ -108,7 +108,7 @@ public class BoardZoneGenerator : Editor
     private static void CreateLifeSlots(GameObject root, TurnPlayer owner, float baseZ, float x)
     {
         string prefix = owner == TurnPlayer.Player1 ? "P1" : "P2";
-        float lifeSpacing = 1.2f;
+        float lifeSpacing = 2.0f;    // Wider spacing — LIFE cards are horizontal
         float startZ = baseZ - (2 * lifeSpacing);   // Centre 5 slots around the row
 
         for (int i = 0; i < 5; i++)

@@ -15,7 +15,9 @@ MonoBehaviour:
   cardName: 
   description: 
   cardCharacterSprite: {fileID: 21300000, guid: 15428da2221be2e4f84b004d5bb6b880, type: 3}
-  cost: 1
   gem: 2
   symbol: 
-  power: 0
+  avatarColor: 0
+  gemColor: 0
+  cost: 1
+  power: 1

@@ -274,19 +274,28 @@ MonoBehaviour:
   cardType: 1
   avatarSO: {fileID: 0}
   magicSO: {fileID: 11400000, guid: 70c9c5d57ec2fc24ca1c2afc701f2eaf, type: 2}
+  lifeCardSO: {fileID: 0}
   cost: 0
+  power: 0
   gem: 1
   symbol: 
   description: 
   cardName: 
   avatarColor: 0
   gemColor: 0
+  isTapped: 0
+  turnPlaced: -1
+  isLifeCard: 0
+  isFaceDown: 0
+  markedForMulligan: 0
   characterArt: {fileID: 5767031504808948645}
   nameText: {fileID: 0}
   descText: {fileID: 0}
   costText: {fileID: 0}
   pitchHighlightImage: {fileID: 0}
   readyHighlightImage: {fileID: 0}
+  attackHighlightImage: {fileID: 0}
+  cardOwner: 0
   moveSpeed: 5
   rotateSpeed: 540
   inHand: 0

@@ -83,6 +83,14 @@ public class UIController : MonoBehaviour
     public Button     mulliganKeepButton;    // "Keep All"
 
     // ════════════════════════════════════════════════════════════════
+    //  7. GAME OVER UI
+    // ════════════════════════════════════════════════════════════════
+
+    [Header("── Game Over UI ──────────────────────")]
+    public GameObject gameOverPanel;        // Full-screen overlay when game ends
+    public TMP_Text   gameOverText;         // "PLAYER X WINS!" message
+
+    // ════════════════════════════════════════════════════════════════
     //  SETUP
     // ════════════════════════════════════════════════════════════════
 
@@ -96,6 +104,7 @@ public class UIController : MonoBehaviour
         HidePaymentUI();
         HideCombatUI();
         HideMulliganUI();
+        HideGameOverUI();
 
         // Wire the Next Phase button to GameManager
         if (nextPhaseButton != null)
@@ -268,5 +277,28 @@ public class UIController : MonoBehaviour
     {
         if (mulliganPanel != null) mulliganPanel.SetActive(false);
         if (mulliganInfoText != null) mulliganInfoText.text = "";
+    }
+
+    // ════════════════════════════════════════════════════════════════
+    //  GAME OVER UI  (Win / Loss — สหัส)
+    // ════════════════════════════════════════════════════════════════
+
+    /// <summary>Show the game over overlay with the winner message.</summary>
+    public void ShowGameOver(string message)
+    {
+        if (gameOverPanel != null) gameOverPanel.SetActive(true);
+        if (gameOverText != null) gameOverText.text = message;
+
+        // Hide all other combat/phase UI
+        HideCombatUI();
+        if (nextPhaseButton != null)
+            nextPhaseButton.gameObject.SetActive(false);
+    }
+
+    /// <summary>Hide the game over panel entirely.</summary>
+    public void HideGameOverUI()
+    {
+        if (gameOverPanel != null) gameOverPanel.SetActive(false);
+        if (gameOverText != null) gameOverText.text = "";
     }
 }

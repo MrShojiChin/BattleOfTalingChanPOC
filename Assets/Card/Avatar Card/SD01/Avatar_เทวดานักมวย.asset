@@ -10,14 +10,14 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: e37000a82d2f04f478aab81b22beab21, type: 3}
-  m_Name: "Avatar_\u0E40\u0E17\u0E27\u0E14\u0E32\u0E15\u0E31\u0E27\u0E40\u0E1B\u0E34\u0E14"
+  m_Name: "Avatar_\u0E40\u0E17\u0E27\u0E14\u0E32\u0E19\u0E31\u0E01\u0E21\u0E27\u0E22"
   m_EditorClassIdentifier: Assembly-CSharp::AvatarCardSO
-  cardName: 
+  cardName: "\u0E40\u0E17\u0E27\u0E14\u0E32\u0E19\u0E31\u0E01\u0E21\u0E27\u0E22"
   description: 
-  cardCharacterSprite: {fileID: 21300000, guid: 3fa5904e21891e14e923f02d844e6ccd, type: 3}
-  gem: 0
+  cardCharacterSprite: {fileID: 21300000, guid: 2a1a5d510d57cf649b791e6b3a0a5546, type: 3}
+  gem: 1
   symbol: 
   avatarColor: 0
   gemColor: 0
-  cost: 0
-  power: 0
+  cost: 1
+  power: 3

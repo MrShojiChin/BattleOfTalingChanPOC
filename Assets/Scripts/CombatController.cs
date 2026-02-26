@@ -38,18 +38,21 @@ public class CombatController : MonoBehaviour
         combatState = CombatState.SelectingAttacker;
         selectedAttacker = null;
 
-        // ── Guard: no enemy avatars on field ──
         Player op = GameManager.instance.OpponentPlayerObj;
-        if (op.AvatarsOnField == 0)
+
+        // ── Guard: no targets at all (no avatars AND no unflipped LIFE cards) ──
+        if (op.AvatarsOnField == 0 && op.UnflippedLifeCards == 0)
         {
-            // Future: allow LIFE Card targeting. For now, inform player.
-            UIController.instance.ShowCombatUI("No enemy avatars on field!\nPress End Phase \u2192 to continue.");
+            UIController.instance.ShowCombatUI("No enemy targets available!\nPress End Phase \u2192 to continue.");
             combatState = CombatState.Idle;
-            Debug.Log("[Combat] No enemy avatars — Battle Phase has nothing to do.");
+            Debug.Log("[Combat] No enemy avatars or LIFE cards — Battle Phase has nothing to do.");
             return;
         }
 
-        UIController.instance.ShowCombatUI("Select an Avatar to attack with.");
+        if (op.AvatarsOnField > 0)
+            UIController.instance.ShowCombatUI("Select an Avatar to attack with.");
+        else
+            UIController.instance.ShowCombatUI("No enemy Avatars — you can attack LIFE cards!\nSelect an Avatar to attack with.");
     }
 
     /// <summary>Called when GameManager leaves Battle Phase.</summary>
@@ -98,6 +101,13 @@ public class CombatController : MonoBehaviour
     {
         GameManager gm = GameManager.instance;
 
+        // LIFE cards can never be used as attackers
+        if (card.isLifeCard)
+        {
+            Debug.Log($"[Combat] {card.cardName} is a LIFE card — can't attack with it.");
+            return;
+        }
+
         // Must be YOUR avatar, on the board
         if (card.cardOwner != gm.currentPlayer)
         {
@@ -123,20 +133,15 @@ public class CombatController : MonoBehaviour
             return;
         }
 
-        // Summon sickness — can't attack on the turn it was placed
-        if (card.turnPlaced == gm.turnNumber)
-        {
-            Debug.Log($"[Combat] {card.cardName} has summon sickness (placed this turn).");
-            UIController.instance.ShowCombatUI($"{card.cardName} was just summoned — can't attack yet!");
-            return;
-        }
+        // NOTE: No summon sickness — avatars CAN attack on the turn they're placed.
+        // P1's Turn 1 battle skip is handled by GameManager.OnNextPhasePressed().
 
-        // Check if opponent has any avatars to target
+        // Check if opponent has any targets (avatars OR unflipped LIFE cards)
         Player op = gm.OpponentPlayerObj;
-        if (op.AvatarsOnField == 0)
+        if (op.AvatarsOnField == 0 && op.UnflippedLifeCards == 0)
         {
-            UIController.instance.ShowCombatUI("No enemy avatars to attack!");
-            Debug.Log("[Combat] No enemy avatars — can't select attacker.");
+            UIController.instance.ShowCombatUI("No enemy targets to attack!");
+            Debug.Log("[Combat] No enemy targets — can't select attacker.");
             return;
         }
 
@@ -144,7 +149,19 @@ public class CombatController : MonoBehaviour
         selectedAttacker = card;
         card.SetAttackHighlight(true);
         combatState = CombatState.SelectingTarget;
-        UIController.instance.ShowCombatUI($"<b>{card.cardName}</b> (Power {card.power}) attacks!\nSelect an enemy Avatar as target.");
+
+        // Different message depending on available targets
+        if (op.AvatarsOnField > 0)
+        {
+            UIController.instance.ShowCombatUI(
+                $"<b>{card.cardName}</b> (Power {card.power}) attacks!\nSelect an enemy Avatar as target.");
+        }
+        else
+        {
+            UIController.instance.ShowCombatUI(
+                $"<b>{card.cardName}</b> attacks!\nNo enemy Avatars — select a LIFE card to attack!");
+        }
+
         Debug.Log($"[Combat] Selected attacker: {card.cardName} (power {card.power})");
     }
 
@@ -163,8 +180,9 @@ public class CombatController : MonoBehaviour
             return;
         }
 
-        // Clicking another of your own cards → switch attacker
-        if (card.cardOwner == gm.currentPlayer && !card.inHand && card.cardType == CardType.Avatar)
+        // Clicking another of your own avatars → switch attacker
+        if (card.cardOwner == gm.currentPlayer && !card.inHand
+            && card.cardType == CardType.Avatar && !card.isLifeCard)
         {
             // Deselect old attacker, select new one
             selectedAttacker.SetAttackHighlight(false);
@@ -172,16 +190,37 @@ public class CombatController : MonoBehaviour
             return;
         }
 
-        // Must be an ENEMY avatar on the board
+        // Must be an ENEMY card on the board
         if (card.cardOwner == gm.currentPlayer)
         {
             Debug.Log("[Combat] Can't target your own card.");
             return;
         }
         if (card.inHand) return;
+
+        // ── LIFE CARD TARGETING ──
+        if (card.isLifeCard && card.isFaceDown)
+        {
+            Player op = gm.OpponentPlayerObj;
+
+            // Can only attack LIFE cards when no enemy avatars exist
+            if (op.AvatarsOnField > 0)
+            {
+                Debug.Log("[Combat] Can't attack LIFE cards while enemy has Avatars on field.");
+                UIController.instance.ShowCombatUI(
+                    "Can't target LIFE cards — defeat all enemy Avatars first!");
+                return;
+            }
+
+            // Resolve LIFE card attack (flip, no power comparison)
+            ResolveLifeCardAttack(selectedAttacker, card);
+            return;
+        }
+
+        // ── AVATAR TARGETING (normal combat) ──
         if (card.cardType != CardType.Avatar)
         {
-            Debug.Log("[Combat] Can only target enemy Avatars (for now).");
+            Debug.Log("[Combat] Can only target enemy Avatars or face-down LIFE cards.");
             return;
         }
 
@@ -241,6 +280,50 @@ public class CombatController : MonoBehaviour
             UIController.instance.ShowCombatUI(
                 $"<color=yellow>DRAW!</color> Both {attacker.cardName} and {defender.cardName} " +
                 $"destroyed ({atkPower} = {defPower})!");
+        }
+
+        // Reset for next attack
+        selectedAttacker = null;
+        combatState = CombatState.SelectingAttacker;
+    }
+
+    // ════════════════════════════════════════════════════════════════
+    //  STEP 3B — RESOLVE LIFE CARD ATTACK
+    // ════════════════════════════════════════════════════════════════
+
+    /// <summary>
+    /// Resolve an attack on a face-down LIFE card.
+    /// No power comparison — the LIFE card simply flips face-up (revealed).
+    /// Then checks for สหัส (all 5 LIFE flipped = game over).
+    /// </summary>
+    private void ResolveLifeCardAttack(Card attacker, Card lifeCard)
+    {
+        Debug.Log($"[Combat] {attacker.cardName} attacks {lifeCard.cardOwner}'s LIFE card!");
+
+        // Tap the attacker (นอน — lay down)
+        attacker.SetTapped(true);
+        attacker.SetAttackHighlight(false);
+
+        // Flip the LIFE card face-up (reveal it)
+        lifeCard.FlipLifeCard();
+
+        // Get the target player to check LIFE count
+        Player target = GameManager.instance.GetPlayer(lifeCard.cardOwner);
+        int remaining = 5 - target.LifeCardsFlipped;
+
+        // Show result
+        UIController.instance.ShowCombatUI(
+            $"<color=yellow><b>{attacker.cardName}</b> hits LIFE!</color>\n" +
+            $"LIFE card revealed: <b>{lifeCard.cardName}</b>\n" +
+            $"LIFE remaining: {remaining}/5");
+
+        Debug.Log($"[Combat] LIFE card flipped: {lifeCard.cardName}. {target.playerId} LIFE: {remaining}/5");
+
+        // Check win condition (สหัส)
+        if (GameManager.instance.CheckWinCondition())
+        {
+            combatState = CombatState.Idle;
+            return;
         }
 
         // Reset for next attack

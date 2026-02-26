@@ -38,6 +38,10 @@ public class GameManager : MonoBehaviour
     public bool isSetupPhase = false;
     private int mulliganStep = 0;   // 0 = P1 mulligan, 1 = P2 mulligan
 
+    // ── GAME OVER ────────────────────────────────────────────────
+    [Header("Game Over")]
+    public bool isGameOver = false;
+
     // ── SETUP ──────────────────────────────────────────────────────
     private void Awake()
     {
@@ -82,14 +86,20 @@ public class GameManager : MonoBehaviour
 
     /// <summary>
     /// Pre-game setup per rulebook:
-    ///   1. Both players draw 5 cards
-    ///   2. P1 mulligans (swap any cards → bottom of deck → redraw → shuffle)
-    ///   3. P2 mulligans
-    ///   4. Game begins — P1 skips Draw Phase on Turn 1
+    ///   1. Deal 5 LIFE cards face-down for each player (from deck top)
+    ///   2. Both players draw 5 cards to hand
+    ///   3. P1 mulligans (swap any cards → bottom of deck → redraw → shuffle)
+    ///   4. P2 mulligans
+    ///   5. Game begins — P1 skips Draw Phase on Turn 1
     /// </summary>
     private void SetupPhase()
     {
         isSetupPhase = true;
+        isGameOver   = false;
+
+        // Deal 5 LIFE cards face-down for each player (from deck top, before hand draw)
+        DealLifeCards(player1);
+        DealLifeCards(player2);
 
         // Draw 5 for each player
         for (int i = 0; i < 5; i++)
@@ -101,7 +111,7 @@ public class GameManager : MonoBehaviour
         mulliganStep = 0;
         currentPlayer = TurnPlayer.Player1;
         UIController.instance.ShowMulliganUI("Player 1 — Select cards to swap, then press Swap. Or press Keep All.");
-        Debug.Log("[GameManager] Setup: Both players drew 5 cards. P1 mulligan begins.");
+        Debug.Log("[GameManager] Setup: LIFE cards dealt + both players drew 5 cards. P1 mulligan begins.");
     }
 
     /// <summary>
@@ -125,11 +135,16 @@ public class GameManager : MonoBehaviour
         // Return each marked card's SO to bottom of deck, then destroy the GO
         foreach (Card card in markedCards)
         {
-            BaseCardSO so = (card.cardType == CardType.Avatar)
-                ? (BaseCardSO)card.avatarSO
-                : (BaseCardSO)card.magicSO;
+            BaseCardSO so = null;
+            if (card.cardType == CardType.Avatar)
+                so = card.avatarSO;
+            else if (card.cardType == CardType.Magic)
+                so = card.magicSO;
+            else if (card.cardType == CardType.Life)
+                so = card.lifeCardSO;  // Shouldn't happen, but defensive
 
-            cp.deck.ReturnCardToBottom(so);
+            if (so != null)
+                cp.deck.ReturnCardToBottom(so);
         }
 
         // Remove from hand and destroy GameObjects
@@ -277,7 +292,8 @@ public class GameManager : MonoBehaviour
     /// <summary>
     /// Battle Phase:
     /// - Player selects avatars to attack.
-    /// - Avatars cannot attack on their first turn on the field (summon sickness).
+    /// - Avatars CAN attack on their first turn on the field (no summon sickness).
+    /// - P1 cannot enter Battle Phase on Turn 1 (handled in OnNextPhasePressed).
     /// </summary>
     public void EnterBattlePhase()
     {
@@ -334,6 +350,8 @@ public class GameManager : MonoBehaviour
     /// </summary>
     public void OnNextPhasePressed()
     {
+        if (isGameOver) return;
+
         switch (currentPhase)
         {
             case TurnPhase.Main:
@@ -385,5 +403,67 @@ public class GameManager : MonoBehaviour
                 zone.activeCard.SetTapped(false);
             }
         }
+    }
+
+    // ════════════════════════════════════════════════════════════════
+    //  LIFE CARD SETUP
+    // ════════════════════════════════════════════════════════════════
+
+    /// <summary>
+    /// Deal 5 face-down LIFE cards from the player's deck to their LIFE zones.
+    /// Called during setup, BEFORE drawing the opening hand.
+    /// Cards are dealt from the shuffled deck top — players don't know what they are.
+    /// </summary>
+    private void DealLifeCards(Player player)
+    {
+        if (player.deck.lifeCardPrefab == null)
+            Debug.LogError($"[GameManager] {player.playerId}: lifeCardPrefab not assigned on DeckController!");
+        if (player.deck.lifeDeckToUse.Count == 0)
+            Debug.LogError($"[GameManager] {player.playerId}: lifeDeckToUse is empty on DeckController! Assign 5 LifeCardSO assets.");
+
+        int dealt = 0;
+        for (int i = 0; i < player.lifeZones.Length; i++)
+        {
+            if (player.lifeZones[i] == null)
+            {
+                Debug.LogWarning($"[GameManager] {player.playerId}: lifeZones[{i}] is null — assign a CardPlacePoint in Inspector!");
+                continue;
+            }
+
+            Card card = player.deck.DrawCardToLifeZone(player.lifeZones[i]);
+            if (card != null) dealt++;
+        }
+
+        Debug.Log($"[GameManager] {player.playerId} — {dealt} LIFE cards dealt face-down (of {player.lifeZones.Length} zones).");
+    }
+
+    // ════════════════════════════════════════════════════════════════
+    //  WIN CONDITION — สหัส (Sahat)
+    // ════════════════════════════════════════════════════════════════
+
+    /// <summary>
+    /// Check if either player has reached สหัส (all 5 LIFE cards flipped face-up).
+    /// If so, the game is over — the other player wins.
+    /// Returns true if game over.
+    /// </summary>
+    public bool CheckWinCondition()
+    {
+        if (player1.IsSahat)
+        {
+            Debug.Log("[GameManager] Player 1 is สหัส (all LIFE flipped)! PLAYER 2 WINS!");
+            isGameOver = true;
+            UIController.instance.ShowGameOver("PLAYER 2 WINS!\nPlayer 1's LIFE is destroyed! (สหัส)");
+            return true;
+        }
+
+        if (player2.IsSahat)
+        {
+            Debug.Log("[GameManager] Player 2 is สหัส (all LIFE flipped)! PLAYER 1 WINS!");
+            isGameOver = true;
+            UIController.instance.ShowGameOver("PLAYER 1 WINS!\nPlayer 2's LIFE is destroyed! (สหัส)");
+            return true;
+        }
+
+        return false;
     }
 }

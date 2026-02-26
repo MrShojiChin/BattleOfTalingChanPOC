@@ -14,6 +14,7 @@ public class Card : MonoBehaviour, IPointerEnterHandler, IPointerExitHandler, IP
     [Header("Assign data based on type")]
     [SerializeField] public AvatarCardSO avatarSO;
     [SerializeField] public MagicCardSO magicSO;
+    [SerializeField] public LifeCardSO lifeCardSO;
 
     [Header("Live variables (runtime)")]
     public int cost;
@@ -29,6 +30,11 @@ public class Card : MonoBehaviour, IPointerEnterHandler, IPointerExitHandler, IP
     [Header("Battle State")]
     public bool isTapped;          // นอน (sleeping/tapped) — already attacked this turn
     public int  turnPlaced = -1;   // Turn number when placed on board (for summon sickness)
+
+    // ── LIFE CARD STATE ─────────────────────────────────────────
+    [Header("Life Card")]
+    public bool isLifeCard;       // This card is placed in a LIFE zone
+    public bool isFaceDown;       // LIFE card hasn't been flipped yet
 
     // ── MULLIGAN ─────────────────────────────────────────────────
     [HideInInspector] public bool markedForMulligan;
@@ -114,6 +120,7 @@ public class Card : MonoBehaviour, IPointerEnterHandler, IPointerExitHandler, IP
 
     public void SetupCard()
     {
+        // ── VALIDATION ──
         if (cardType == CardType.Avatar && avatarSO == null)
         {
             Debug.LogError($"{name}: Avatar selected but avatarSO is not assigned!");
@@ -124,7 +131,13 @@ public class Card : MonoBehaviour, IPointerEnterHandler, IPointerExitHandler, IP
             Debug.LogError($"{name}: Magic selected but magicSO is not assigned!");
             return;
         }
+        if (cardType == CardType.Life && lifeCardSO == null)
+        {
+            Debug.LogError($"{name}: Life selected but lifeCardSO is not assigned!");
+            return;
+        }
 
+        // ── AVATAR ──
         if (cardType == CardType.Avatar)
         {
             cardName = avatarSO.cardName;
@@ -137,7 +150,8 @@ public class Card : MonoBehaviour, IPointerEnterHandler, IPointerExitHandler, IP
             gemColor = avatarSO.gemColor;
             if (characterArt) characterArt.sprite = avatarSO.cardCharacterSprite;
         }
-        else
+        // ── MAGIC ──
+        else if (cardType == CardType.Magic)
         {
             cardName = magicSO.cardName;
             description = magicSO.description;
@@ -148,13 +162,33 @@ public class Card : MonoBehaviour, IPointerEnterHandler, IPointerExitHandler, IP
             gemColor = magicSO.gemColor;
             if (characterArt) characterArt.sprite = magicSO.cardCharacterSprite;
         }
+        // ── LIFE ──
+        else if (cardType == CardType.Life)
+        {
+            cardName = lifeCardSO.cardName;
+            description = lifeCardSO.description;
+            cost = 0;
+            power = 0;
+            gem = lifeCardSO.gem;
+            symbol = lifeCardSO.symbol;
+            avatarColor = CardColor.Neutral;
+            gemColor = CardColor.Neutral;
+
+            if (characterArt != null)
+                characterArt.sprite = lifeCardSO.cardCharacterSprite;
+            else
+                Debug.LogWarning($"[Card] {name}: characterArt is null — wire it on the LifeCard prefab!");
+
+            if (lifeCardSO.cardCharacterSprite == null)
+                Debug.LogWarning($"[Card] {cardName}: LifeCardSO has no cardCharacterSprite assigned!");
+        }
 
         if (nameText) nameText.text = cardName;
         if (descText) descText.text = description;
         if (costText)
         {
             costText.text = cost.ToString();
-            costText.gameObject.SetActive(cardType == CardType.Avatar);
+            costText.gameObject.SetActive(cardType == CardType.Avatar);  // Only Avatars show cost
         }
     }
 
@@ -358,6 +392,14 @@ public class Card : MonoBehaviour, IPointerEnterHandler, IPointerExitHandler, IP
             return; // No other interactions during setup
         }
 
+        // ── LIFE CARDS: never draggable, only clickable in Battle Phase ──
+        if (isLifeCard)
+        {
+            if (GameManager.instance != null && GameManager.instance.IsBattlePhase())
+                CombatController.instance.HandleCardClick(this, isRightClick);
+            return; // LIFE cards only respond during Battle Phase
+        }
+
         // ── BATTLE PHASE: route all clicks to CombatController ────
         if (GameManager.instance != null && GameManager.instance.IsBattlePhase())
         {
@@ -558,6 +600,40 @@ public class Card : MonoBehaviour, IPointerEnterHandler, IPointerExitHandler, IP
         {
             MoveToPoint(theHC.cardPositions[handPosition], theHC.minPos.rotation);
         }
+    }
+
+    // ── LIFE CARD ────────────────────────────────────────────────
+
+    /// <summary>
+    /// Set the face-down state of a LIFE card.
+    /// Face-down: rotates the card 180° to show the card back (no art hiding).
+    /// Face-up: rotates back to normal, revealing the front with art.
+    /// </summary>
+    public void SetFaceDown(bool faceDown)
+    {
+        isFaceDown = faceDown;
+
+        // Rotate the whole card to show back (face-down) or front (face-up).
+        // LIFE cards are horizontal (-90° Y). Face-down adds 180° X flip.
+        if (isLifeCard && assignedPlace != null)
+        {
+            Quaternion rot = faceDown
+                ? Quaternion.Euler(180f, -90f, 0f)   // Horizontal + flipped (card back up)
+                : Quaternion.Euler(0f, -90f, 0f);     // Horizontal + normal (card front up)
+            MoveToPoint(assignedPlace.transform.position, rot);
+        }
+    }
+
+    /// <summary>
+    /// Flip a face-down LIFE card face-up (reveal it).
+    /// Called when an attacker hits this LIFE card during Battle Phase.
+    /// </summary>
+    public void FlipLifeCard()
+    {
+        if (!isLifeCard || !isFaceDown) return;
+
+        SetFaceDown(false);
+        Debug.Log($"[LIFE] {cardOwner}'s LIFE card flipped: {cardName}!");
     }
 
 #if UNITY_EDITOR
