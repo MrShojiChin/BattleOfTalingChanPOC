@@ -182,6 +182,7 @@ public class BattleController : MonoBehaviour
         Debug.Log($"[Summon] {pendingAvatar.cardName} summoned to {placePoint.name}!");
 
         ResetSummonState();
+        UIController.instance?.UpdateGameInfo();
     }
 
     // ════════════════════════════════════════════════════════════════

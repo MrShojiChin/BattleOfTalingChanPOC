@@ -301,17 +301,30 @@ public class Card : MonoBehaviour, IPointerEnterHandler, IPointerExitHandler, IP
         }
 
         // ── CASE C: Normal placement (free avatar cost==0, or magic card) ──
+
+        // Magic cards → multi-card zone (stacking)
+        if (cardType == CardType.Magic && point.isPlayerMagicPoint && point.IsCurrentPlayerZone())
+        {
+            isSelected = false;
+            inHand = false;
+            EnableInteraction();
+            point.AddCard(this);  // Uses multi-card stacking
+            HandController theHC = OwnerHand;
+            if (theHC != null) theHC.RemoveCardFromHand(this);
+            Debug.Log($"{cardName} (Magic) placed in Magic Zone (stack #{point.activeCards.Count}).");
+            UIController.instance?.UpdateGameInfo();
+            return;
+        }
+
+        // Free avatar (cost 0) → single-card zone
         if (point.activeCard == null)
         {
-            bool valid = false;
-            if (cardType == CardType.Avatar && point.isPlayerAvatarPoint) valid = true;
-            if (cardType == CardType.Magic && point.isPlayerMagicPoint) valid = true;
-
-            if (valid)
+            if (cardType == CardType.Avatar && point.isPlayerAvatarPoint && point.IsCurrentPlayerZone())
             {
                 PlaceOnBoard(point);
                 HandController theHC = OwnerHand;
                 if (theHC != null) theHC.RemoveCardFromHand(this);
+                UIController.instance?.UpdateGameInfo();
                 return;
             }
         }
@@ -380,6 +393,13 @@ public class Card : MonoBehaviour, IPointerEnterHandler, IPointerExitHandler, IP
         bool isLeftClick = eventData.button == PointerEventData.InputButton.Left;
         bool isRightClick = eventData.button == PointerEventData.InputButton.Right;
 
+        // Dismiss card preview on any left-click
+        if (isLeftClick)
+            UIController.instance?.HideCardPreview();
+
+        // ── GAME OVER: block all interaction ──
+        if (GameManager.instance != null && GameManager.instance.isGameOver) return;
+
         // ── END PHASE DISCARD: toggle card selection for discard ──
         if (GameManager.instance != null && GameManager.instance.isDiscardPhase)
         {
@@ -426,7 +446,7 @@ public class Card : MonoBehaviour, IPointerEnterHandler, IPointerExitHandler, IP
             return; // No other card logic during Battle Phase
         }
 
-        // ── RIGHT-CLICK: Cancellation ──────────────────────────────
+        // ── RIGHT-CLICK: Cancellation or Card Preview ─────────────
         if (isRightClick)
         {
             if (bc.currentTributes.Contains(this))
@@ -438,6 +458,20 @@ public class Card : MonoBehaviour, IPointerEnterHandler, IPointerExitHandler, IP
             if (this == bc.pendingAvatar)
             {
                 bc.CancelFullSummon();
+                return;
+            }
+
+            // Right-click a card in hand (no summon active) → show preview
+            if (inHand && bc.currentState == SummonState.Idle)
+            {
+                UIController.instance?.ShowCardPreview(this);
+                return;
+            }
+
+            // Right-click a card on board → show preview
+            if (!inHand && assignedPlace != null)
+            {
+                UIController.instance?.ShowCardPreview(this);
                 return;
             }
 

@@ -91,6 +91,31 @@ public class UIController : MonoBehaviour
     public TMP_Text   gameOverText;         // "PLAYER X WINS!" message
 
     // ════════════════════════════════════════════════════════════════
+    //  10. CARD PREVIEW (right-click zoom)
+    // ════════════════════════════════════════════════════════════════
+
+    [Header("── Card Preview ──────────────────────")]
+    public GameObject cardPreviewPanel;     // Full panel (enable/disable)
+    public Image      cardPreviewArt;       // Card art image
+    public TMP_Text   cardPreviewName;      // Card name
+    public TMP_Text   cardPreviewDesc;      // Description / effect text
+    public TMP_Text   cardPreviewStats;     // "Power: X  |  Cost: Y  |  Gem: Z"
+    public TMP_Text   cardPreviewType;      // "AVATAR — Red" or "MAGIC — Normal"
+
+    // ════════════════════════════════════════════════════════════════
+    //  9. GAME INFO HUD (deck count, hand count, turn number)
+    // ════════════════════════════════════════════════════════════════
+
+    [Header("── Game Info HUD ──────────────────────")]
+    public TMP_Text turnNumberText;        // "Turn 3"
+    public TMP_Text p1DeckCountText;       // "Deck: 15"
+    public TMP_Text p1HandCountText;       // "Hand: 5"
+    public TMP_Text p2DeckCountText;       // "Deck: 15"
+    public TMP_Text p2HandCountText;       // "Hand: 5"
+    public TMP_Text p1LifeCountText;       // "LIFE: 5/5"
+    public TMP_Text p2LifeCountText;       // "LIFE: 5/5"
+
+    // ════════════════════════════════════════════════════════════════
     //  8. DISCARD UI (End Phase — hand limit)
     // ════════════════════════════════════════════════════════════════
 
@@ -115,6 +140,7 @@ public class UIController : MonoBehaviour
         HideMulliganUI();
         HideGameOverUI();
         HideDiscardUI();
+        HideCardPreview();
 
         // Wire the Next Phase button to GameManager
         if (nextPhaseButton != null)
@@ -144,6 +170,7 @@ public class UIController : MonoBehaviour
         UpdateTurnIndicator(player);
         UpdatePhaseBar(phase);
         UpdateNextPhaseButton(phase);
+        UpdateGameInfo();
     }
 
     // ════════════════════════════════════════════════════════════════
@@ -364,5 +391,112 @@ public class UIController : MonoBehaviour
         // Enable confirm only when the exact count is selected
         if (discardConfirmButton != null)
             discardConfirmButton.interactable = (selected == required);
+    }
+
+    // ════════════════════════════════════════════════════════════════
+    //  CARD PREVIEW — right-click zoom detail
+    // ════════════════════════════════════════════════════════════════
+
+    /// <summary>Show a card's full details in the preview panel.</summary>
+    public void ShowCardPreview(Card card)
+    {
+        if (cardPreviewPanel == null) return;
+        cardPreviewPanel.SetActive(true);
+
+        if (cardPreviewName != null)
+            cardPreviewName.text = card.cardName;
+
+        if (cardPreviewDesc != null)
+            cardPreviewDesc.text = string.IsNullOrEmpty(card.description) ? "(no description)" : card.description;
+
+        if (cardPreviewArt != null && card.characterArt != null)
+            cardPreviewArt.sprite = card.characterArt.sprite;
+
+        if (cardPreviewType != null)
+        {
+            cardPreviewType.text = card.cardType switch
+            {
+                CardType.Avatar => $"AVATAR — {card.avatarColor}",
+                CardType.Magic  => $"MAGIC — {(card.magicSO != null ? card.magicSO.magicType.ToString() : "Normal")}",
+                CardType.Life   => "LIFE CARD",
+                _               => card.cardType.ToString()
+            };
+        }
+
+        if (cardPreviewStats != null)
+        {
+            string stats = "";
+            if (card.cardType == CardType.Avatar)
+                stats = $"Power: {card.power}  |  Cost: {card.cost}  |  Gem: {card.gem} ({card.gemColor})";
+            else if (card.cardType == CardType.Magic)
+                stats = $"Gem: {card.gem} ({card.gemColor})";
+            else
+                stats = $"Gem: {card.gem}";
+            cardPreviewStats.text = stats;
+        }
+    }
+
+    /// <summary>Hide the card preview panel.</summary>
+    public void HideCardPreview()
+    {
+        if (cardPreviewPanel != null)
+            cardPreviewPanel.SetActive(false);
+    }
+
+    // ════════════════════════════════════════════════════════════════
+    //  GAME INFO HUD — deck/hand/life/turn counters
+    // ════════════════════════════════════════════════════════════════
+
+    /// <summary>
+    /// Refresh all info counters (deck size, hand size, life remaining, turn number).
+    /// Called automatically by UpdateHUD() on every phase/turn change.
+    /// Can also be called manually after any card movement (draw, discard, etc.).
+    /// </summary>
+    public void UpdateGameInfo()
+    {
+        GameManager gm = GameManager.instance;
+        if (gm == null) return;
+
+        // Turn number
+        if (turnNumberText != null)
+            turnNumberText.text = $"Turn {gm.turnNumber}";
+
+        // Player 1 info
+        if (gm.player1 != null)
+        {
+            if (p1DeckCountText != null && gm.player1.deck != null)
+            {
+                int remaining = gm.player1.deck.CardsRemaining;
+                p1DeckCountText.text = $"Deck: {remaining}";
+                p1DeckCountText.color = remaining <= 3 ? Color.red : Color.white;
+            }
+            if (p1HandCountText != null && gm.player1.hand != null)
+                p1HandCountText.text = $"Hand: {gm.player1.hand.heldCards.Count}";
+            if (p1LifeCountText != null)
+            {
+                int remaining = 5 - gm.player1.LifeCardsFlipped;
+                p1LifeCountText.text = $"LIFE: {remaining}/5";
+                p1LifeCountText.color = remaining <= 2 ? Color.red : remaining <= 3 ? Color.yellow : Color.white;
+            }
+        }
+
+        // Player 2 info
+        if (gm.player2 != null)
+        {
+            if (p2DeckCountText != null && gm.player2.deck != null)
+            {
+                int remaining = gm.player2.deck.CardsRemaining;
+                p2DeckCountText.text = $"Deck: {remaining}";
+                p2DeckCountText.color = remaining <= 3 ? Color.red : Color.white;
+            }
+            if (p2HandCountText != null && gm.player2.hand != null)
+                p2HandCountText.text = $"Hand: {gm.player2.hand.heldCards.Count}";
+            if (p2LifeCountText != null)
+            {
+                int remaining = 5 - gm.player2.LifeCardsFlipped;
+                p2LifeCountText.text = $"LIFE: {remaining}/5";
+                p2LifeCountText.color = remaining <= 2 ? Color.red : remaining <= 3 ? Color.yellow : Color.white;
+            }
+        }
     }
 }

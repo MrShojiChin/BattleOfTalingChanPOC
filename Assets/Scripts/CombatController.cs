@@ -47,7 +47,7 @@ public class CombatController : MonoBehaviour
         // Only active during Battle Phase and when combat is in progress
         if (combatState == CombatState.Idle) return;
         GameManager gm = GameManager.instance;
-        if (gm == null || !gm.IsBattlePhase()) return;
+        if (gm == null || gm.isGameOver || !gm.IsBattlePhase()) return;
         if (Mouse.current == null) return;
 
         // Detect left-click
@@ -153,6 +153,8 @@ public class CombatController : MonoBehaviour
     /// <summary>Called when GameManager leaves Battle Phase.</summary>
     public void EndBattlePhase()
     {
+        HighlightValidTargets(false);
+
         if (selectedAttacker != null)
             selectedAttacker.SetAttackHighlight(false);
 
@@ -250,6 +252,9 @@ public class CombatController : MonoBehaviour
         selectedAttacker = card;
         card.SetAttackHighlight(true);
         combatState = CombatState.SelectingTarget;
+
+        // Highlight valid targets
+        HighlightValidTargets(true);
 
         // Different message depending on available targets
         if (op.AvatarsOnField > 0)
@@ -385,6 +390,10 @@ public class CombatController : MonoBehaviour
                 $"destroyed ({atkPower} = {defPower})!");
         }
 
+        // Clear target highlights and refresh HUD
+        HighlightValidTargets(false);
+        UIController.instance.UpdateGameInfo();
+
         // Reset for next attack
         selectedAttacker = null;
         combatState = CombatState.SelectingAttacker;
@@ -421,6 +430,12 @@ public class CombatController : MonoBehaviour
             $"LIFE remaining: {remaining}/5");
 
         Debug.Log($"[Combat] LIFE card flipped: {lifeCard.cardName}. {target.playerId} LIFE: {remaining}/5");
+
+        // Refresh HUD counters
+        UIController.instance.UpdateGameInfo();
+
+        // Clear target highlights
+        HighlightValidTargets(false);
 
         // Check win condition (สหัส)
         if (GameManager.instance.CheckWinCondition())
@@ -463,11 +478,50 @@ public class CombatController : MonoBehaviour
     }
 
     // ════════════════════════════════════════════════════════════════
+    //  TARGET HIGHLIGHTING
+    // ════════════════════════════════════════════════════════════════
+
+    /// <summary>
+    /// Highlight or un-highlight all valid enemy targets.
+    /// When selecting a target: enemy avatars glow green (ready), or LIFE cards glow green if no avatars.
+    /// </summary>
+    private void HighlightValidTargets(bool on)
+    {
+        GameManager gm = GameManager.instance;
+        if (gm == null) return;
+
+        Player op = gm.OpponentPlayerObj;
+
+        if (op.AvatarsOnField > 0)
+        {
+            // Highlight enemy avatars
+            foreach (var zone in op.avatarZones)
+            {
+                if (zone != null && zone.activeCard != null)
+                    zone.activeCard.SetReadyHighlight(on);
+            }
+        }
+        else
+        {
+            // Highlight unflipped LIFE cards
+            foreach (var zone in op.lifeZones)
+            {
+                if (zone != null && zone.activeCard != null
+                    && zone.activeCard.isLifeCard && zone.activeCard.isFaceDown)
+                    zone.activeCard.SetReadyHighlight(on);
+            }
+        }
+    }
+
+    // ════════════════════════════════════════════════════════════════
     //  CANCEL
     // ════════════════════════════════════════════════════════════════
 
     public void CancelAttackSelection()
     {
+        // Clear target highlights
+        HighlightValidTargets(false);
+
         if (selectedAttacker != null)
         {
             selectedAttacker.SetAttackHighlight(false);

@@ -59,9 +59,13 @@ public class DeckController : MonoBehaviour
     {
         if (activeCards.Count == 0)
         {
-            // TODO: Rulebook says deck-out = instant loss. For now, reshuffle.
-            Debug.LogWarning($"[DeckController] {owner?.playerId} deck is empty — reshuffling.");
-            SetupDeck();
+            // Rulebook: deck-out = instant loss
+            Debug.LogError($"[DeckController] {owner?.playerId} deck is EMPTY — DECK-OUT LOSS!");
+            if (GameManager.instance != null)
+            {
+                GameManager.instance.DeclareLoser(owner.playerId, "deck is empty (deck-out)");
+            }
+            return;
         }
 
         if (owner == null || owner.hand == null)

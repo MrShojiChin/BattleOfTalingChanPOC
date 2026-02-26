@@ -277,12 +277,16 @@ public class GameManager : MonoBehaviour
             // Draw up to 3
             int cardsToDraw = 3 - currentHandSize;
             for (int i = 0; i < cardsToDraw; i++)
+            {
                 cp.deck.DrawCardToHand();
+                if (isGameOver) return; // Deck-out triggered
+            }
         }
         else
         {
             // Draw exactly 1
             cp.deck.DrawCardToHand();
+            if (isGameOver) return; // Deck-out triggered
         }
 
         // Auto-advance to Main Phase after drawing
@@ -516,6 +520,22 @@ public class GameManager : MonoBehaviour
     // ════════════════════════════════════════════════════════════════
     //  WIN CONDITION — สหัส (Sahat)
     // ════════════════════════════════════════════════════════════════
+
+    /// <summary>
+    /// Declare a player as the loser (e.g., deck-out).
+    /// The other player wins. Ends the game.
+    /// </summary>
+    public void DeclareLoser(TurnPlayer loser, string reason)
+    {
+        if (isGameOver) return;
+
+        isGameOver = true;
+        string winner = loser == TurnPlayer.Player1 ? "PLAYER 2" : "PLAYER 1";
+        string loserName = loser == TurnPlayer.Player1 ? "Player 1" : "Player 2";
+
+        Debug.Log($"[GameManager] {loserName} loses — {reason}. {winner} WINS!");
+        UIController.instance.ShowGameOver($"{winner} WINS!\n{loserName}'s {reason}");
+    }
 
     /// <summary>
     /// Check if either player has reached สหัส (all 5 LIFE cards flipped face-up).
