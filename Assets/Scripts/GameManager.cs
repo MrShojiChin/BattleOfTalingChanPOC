@@ -101,6 +101,10 @@ public class GameManager : MonoBehaviour
         isSetupPhase = true;
         isGameOver   = false;
 
+        // ── Ensure decks are initialized (Start() order is not guaranteed) ──
+        player1.deck.SetupDeck();
+        player2.deck.SetupDeck();
+
         // ── Auto-discover any missing zone references (fixes broken Inspector refs) ──
         player1.AutoDiscoverZones();
         player2.AutoDiscoverZones();

@@ -26,10 +26,14 @@ public class DeckController : MonoBehaviour
 
     private List<BaseCardSO> activeCards = new List<BaseCardSO>();
     private int lifeCardIndex = 0;  // Tracks how many LIFE cards have been dealt
+    private bool deckInitialized = false;
 
     void Start()
     {
-        SetupDeck();
+        // Safety net — SetupDeck() is also called by GameManager.SetupPhase()
+        // to guarantee order. Skip if already done.
+        if (!deckInitialized)
+            SetupDeck();
     }
 
     // ── REMOVED: Update() with Space key — GameManager handles draw timing ──
@@ -37,6 +41,7 @@ public class DeckController : MonoBehaviour
     public void SetupDeck()
     {
         activeCards.Clear();
+        deckInitialized = true;
 
         List<BaseCardSO> tempDeck = new List<BaseCardSO>();
         tempDeck.AddRange(deckToUse);
