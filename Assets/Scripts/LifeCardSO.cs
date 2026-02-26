@@ -6,9 +6,10 @@ public class LifeCardSO : BaseCardSO
     // LIFE cards inherit from BaseCardSO:
     //   cardName, description, cardCharacterSprite, gem, symbol
     //
-    // No additional fields needed for now.
     // LIFE cards have no cost and no power — they sit face-down
     // in LIFE zones and flip face-up when attacked.
-    //
-    // Future: add special effect triggers (e.g. on-flip abilities).
+
+    [Header("On-Flip Effect (triggers when this LIFE card is revealed)")]
+    public MagicEffect onFlipEffect = MagicEffect.None;
+    public int onFlipValue = 0;   // e.g. draw 1, -1 power to all enemy avatars
 }

@@ -28,6 +28,10 @@ public class CombatController : MonoBehaviour
     public CombatState combatState = CombatState.Idle;
     public Card selectedAttacker;
 
+    // ── ลักหัด (equal power decision) ────────────────────────────
+    private Card pendingLakHatAttacker;
+    private Card pendingLakHatDefender;
+
     private void Awake()
     {
         instance = this;
@@ -382,12 +386,17 @@ public class CombatController : MonoBehaviour
         }
         else
         {
-            // Equal power → both destroyed (unless ลักหัด — TODO)
-            SendToHell(attacker);
-            SendToHell(defender);
-            UIController.instance.ShowCombatUI(
-                $"<color=yellow>DRAW!</color> Both {attacker.cardName} and {defender.cardName} " +
-                $"destroyed ({atkPower} = {defPower})!");
+            // Equal power → ลักหัด rule: attacker decides
+            pendingLakHatAttacker = attacker;
+            pendingLakHatDefender = defender;
+
+            UIController.instance.ShowLakHatUI(attacker.cardName, defender.cardName, atkPower);
+            Debug.Log($"[Combat] ลักหัด! {attacker.cardName} ({atkPower}) = {defender.cardName} ({defPower}). Attacker decides.");
+
+            // Pause combat — wait for player decision
+            HighlightValidTargets(false);
+            combatState = CombatState.Idle;
+            return;
         }
 
         // Clear target highlights and refresh HUD
@@ -423,12 +432,21 @@ public class CombatController : MonoBehaviour
         Player target = GameManager.instance.GetPlayer(lifeCard.cardOwner);
         int remaining = 5 - target.LifeCardsFlipped;
 
-        // Show result
-        UIController.instance.ShowCombatUI(
+        // Build result message
+        string resultMsg =
             $"<color=yellow><b>{attacker.cardName}</b> hits LIFE!</color>\n" +
             $"LIFE card revealed: <b>{lifeCard.cardName}</b>\n" +
-            $"LIFE remaining: {remaining}/5");
+            $"LIFE remaining: {remaining}/5";
 
+        // Trigger on-flip effect (if any)
+        if (lifeCard.lifeCardSO != null && lifeCard.lifeCardSO.onFlipEffect != MagicEffect.None)
+        {
+            MagicEffectResolver.ResolveLifeFlipEffect(lifeCard);
+            resultMsg += $"\n<color=cyan>LIFE Effect: {lifeCard.lifeCardSO.onFlipEffect}!</color>";
+            Debug.Log($"[LIFE] On-flip effect triggered: {lifeCard.lifeCardSO.onFlipEffect} ({lifeCard.lifeCardSO.onFlipValue})");
+        }
+
+        UIController.instance.ShowCombatUI(resultMsg);
         Debug.Log($"[Combat] LIFE card flipped: {lifeCard.cardName}. {target.playerId} LIFE: {remaining}/5");
 
         // Refresh HUD counters
@@ -453,7 +471,7 @@ public class CombatController : MonoBehaviour
     //  SEND TO HELL (destroy a card from the board)
     // ════════════════════════════════════════════════════════════════
 
-    private void SendToHell(Card card)
+    public void SendToHell(Card card)
     {
         // Clear board slot
         if (card.assignedPlace != null)
@@ -475,6 +493,43 @@ public class CombatController : MonoBehaviour
             cardOwner.hellZone.AddCard(card);
             Debug.Log($"[Combat] {card.cardName} → {card.cardOwner}'s Hell Zone.");
         }
+    }
+
+    // ════════════════════════════════════════════════════════════════
+    //  ลักหัด DECISION (equal power — attacker chooses)
+    // ════════════════════════════════════════════════════════════════
+
+    /// <summary>Attacker chose: destroy both cards.</summary>
+    public void OnLakHatDestroyBoth()
+    {
+        if (pendingLakHatAttacker == null || pendingLakHatDefender == null) return;
+
+        SendToHell(pendingLakHatAttacker);
+        SendToHell(pendingLakHatDefender);
+        FinishLakHat($"Both {pendingLakHatAttacker.cardName} and {pendingLakHatDefender.cardName} destroyed!");
+    }
+
+    /// <summary>Attacker chose: keep both cards alive.</summary>
+    public void OnLakHatKeepBoth()
+    {
+        if (pendingLakHatAttacker == null || pendingLakHatDefender == null) return;
+
+        // Both survive — attacker is already tapped from ResolveCombat
+        FinishLakHat($"Both {pendingLakHatAttacker.cardName} and {pendingLakHatDefender.cardName} survive!");
+    }
+
+    private void FinishLakHat(string resultMsg)
+    {
+        UIController.instance.ShowCombatUI($"<color=yellow>ลักหัด!</color> {resultMsg}");
+        UIController.instance.HideLakHatUI();
+        UIController.instance.UpdateGameInfo();
+
+        pendingLakHatAttacker = null;
+        pendingLakHatDefender = null;
+        selectedAttacker = null;
+        combatState = CombatState.SelectingAttacker;
+
+        Debug.Log($"[Combat] ลักหัด resolved: {resultMsg}");
     }
 
     // ════════════════════════════════════════════════════════════════

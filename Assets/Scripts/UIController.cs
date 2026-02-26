@@ -116,6 +116,26 @@ public class UIController : MonoBehaviour
     public TMP_Text p2LifeCountText;       // "LIFE: 5/5"
 
     // ════════════════════════════════════════════════════════════════
+    //  11. ลักหัด DECISION UI (equal power combat)
+    // ════════════════════════════════════════════════════════════════
+
+    [Header("── ลักหัด Decision UI ──────────────────────")]
+    public GameObject lakHatPanel;
+    public TMP_Text   lakHatInfoText;
+    public Button     lakHatDestroyButton;  // "Destroy Both"
+    public Button     lakHatKeepButton;     // "Keep Both"
+
+    // ════════════════════════════════════════════════════════════════
+    //  12. HELL ZONE VIEWER (discard pile browser)
+    // ════════════════════════════════════════════════════════════════
+
+    [Header("── Hell Zone Viewer ──────────────────────")]
+    public GameObject hellViewerPanel;
+    public TMP_Text   hellViewerTitle;
+    public TMP_Text   hellViewerCardList;    // Text list of all cards
+    public Button     hellViewerCloseButton;
+
+    // ════════════════════════════════════════════════════════════════
     //  8. DISCARD UI (End Phase — hand limit)
     // ════════════════════════════════════════════════════════════════
 
@@ -141,6 +161,8 @@ public class UIController : MonoBehaviour
         HideGameOverUI();
         HideDiscardUI();
         HideCardPreview();
+        HideLakHatUI();
+        HideHellZoneViewer();
 
         // Wire the Next Phase button to GameManager
         if (nextPhaseButton != null)
@@ -155,6 +177,16 @@ public class UIController : MonoBehaviour
         // Wire the Discard button to GameManager
         if (discardConfirmButton != null)
             discardConfirmButton.onClick.AddListener(() => GameManager.instance.OnDiscardConfirmed());
+
+        // Wire ลักหัด buttons to CombatController
+        if (lakHatDestroyButton != null)
+            lakHatDestroyButton.onClick.AddListener(() => CombatController.instance.OnLakHatDestroyBoth());
+        if (lakHatKeepButton != null)
+            lakHatKeepButton.onClick.AddListener(() => CombatController.instance.OnLakHatKeepBoth());
+
+        // Wire Hell Zone viewer close button
+        if (hellViewerCloseButton != null)
+            hellViewerCloseButton.onClick.AddListener(HideHellZoneViewer);
     }
 
     // ════════════════════════════════════════════════════════════════
@@ -391,6 +423,79 @@ public class UIController : MonoBehaviour
         // Enable confirm only when the exact count is selected
         if (discardConfirmButton != null)
             discardConfirmButton.interactable = (selected == required);
+    }
+
+    // ════════════════════════════════════════════════════════════════
+    //  ลักหัด DECISION UI — equal power combat choice
+    // ════════════════════════════════════════════════════════════════
+
+    public void ShowLakHatUI(string atkName, string defName, int power)
+    {
+        if (lakHatPanel != null) lakHatPanel.SetActive(true);
+        if (lakHatInfoText != null)
+            lakHatInfoText.text =
+                $"<color=yellow><b>ลักหัด!</b></color>\n" +
+                $"{atkName} ({power}) = {defName} ({power})\n\n" +
+                $"Destroy both or keep both alive?";
+
+        // Hide the next phase button while deciding
+        if (nextPhaseButton != null)
+            nextPhaseButton.gameObject.SetActive(false);
+    }
+
+    public void HideLakHatUI()
+    {
+        if (lakHatPanel != null) lakHatPanel.SetActive(false);
+
+        // Restore the next phase button (we're still in Battle Phase)
+        if (nextPhaseButton != null)
+            nextPhaseButton.gameObject.SetActive(true);
+    }
+
+    // ════════════════════════════════════════════════════════════════
+    //  HELL ZONE VIEWER — discard pile browser
+    // ════════════════════════════════════════════════════════════════
+
+    public void ShowHellZoneViewer(Player player)
+    {
+        if (hellViewerPanel == null) return;
+        hellViewerPanel.SetActive(true);
+
+        string playerName = player.playerId == TurnPlayer.Player1 ? "Player 1" : "Player 2";
+        int count = player.hellZone != null ? player.hellZone.activeCards.Count : 0;
+
+        if (hellViewerTitle != null)
+            hellViewerTitle.text = $"{playerName}'s Hell Zone ({count} cards)";
+
+        if (hellViewerCardList != null)
+        {
+            if (count == 0)
+            {
+                hellViewerCardList.text = "(empty)";
+            }
+            else
+            {
+                System.Text.StringBuilder sb = new System.Text.StringBuilder();
+                for (int i = 0; i < player.hellZone.activeCards.Count; i++)
+                {
+                    Card c = player.hellZone.activeCards[i];
+                    string typeTag = c.cardType switch
+                    {
+                        CardType.Avatar => $"<color=#FF6666>AVA</color> Pw:{c.power}",
+                        CardType.Magic  => "<color=#6699FF>MAG</color>",
+                        CardType.Life   => "<color=#999999>LIFE</color>",
+                        _               => "???"
+                    };
+                    sb.AppendLine($"{i + 1}. {c.cardName}  [{typeTag}]  Gem:{c.gem}");
+                }
+                hellViewerCardList.text = sb.ToString();
+            }
+        }
+    }
+
+    public void HideHellZoneViewer()
+    {
+        if (hellViewerPanel != null) hellViewerPanel.SetActive(false);
     }
 
     // ════════════════════════════════════════════════════════════════

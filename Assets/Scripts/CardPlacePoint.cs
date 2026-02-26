@@ -84,6 +84,22 @@ public class CardPlacePoint : MonoBehaviour
         RepositionStack();
     }
 
+    // ════════════════════════════════════════════════════════════════
+    //  CLICK HANDLER — Hell Zone opens viewer
+    // ════════════════════════════════════════════════════════════════
+
+    private void OnMouseDown()
+    {
+        if (GameManager.instance != null && GameManager.instance.isGameOver) return;
+
+        // Click Hell Zone → open viewer
+        if (zoneType == ZoneType.Hell && activeCards.Count > 0)
+        {
+            Player zoneOwner = GameManager.instance.GetPlayer(owner);
+            UIController.instance.ShowHellZoneViewer(zoneOwner);
+        }
+    }
+
     /// <summary>
     /// Reposition all cards in the stack with proper offsets.
     /// Magic Zone: fans out horizontally so you can see each card.

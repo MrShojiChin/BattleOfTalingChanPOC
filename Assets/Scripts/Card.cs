@@ -45,6 +45,7 @@ public class Card : MonoBehaviour, IPointerEnterHandler, IPointerExitHandler, IP
     public TMP_Text nameText;
     public TMP_Text descText;
     public TMP_Text costText;
+    public TMP_Text powerText;    // Shows power on board (visible for avatars)
 
     [Header("Highlights")]
     public Image pitchHighlightImage;           // Border/glow for "pending" state (yellow)
@@ -312,6 +313,14 @@ public class Card : MonoBehaviour, IPointerEnterHandler, IPointerExitHandler, IP
             HandController theHC = OwnerHand;
             if (theHC != null) theHC.RemoveCardFromHand(this);
             Debug.Log($"{cardName} (Magic) placed in Magic Zone (stack #{point.activeCards.Count}).");
+
+            // Resolve magic effect (if any)
+            if (magicSO != null && magicSO.effect != MagicEffect.None)
+            {
+                MagicEffectResolver.ResolveEffect(this);
+                Debug.Log($"[Magic] {cardName} effect resolved: {magicSO.effect} ({magicSO.effectValue})");
+            }
+
             UIController.instance?.UpdateGameInfo();
             return;
         }
@@ -560,7 +569,30 @@ public class Card : MonoBehaviour, IPointerEnterHandler, IPointerExitHandler, IP
         if (GameManager.instance != null)
             turnPlaced = GameManager.instance.turnNumber;
 
+        // Show power on board for avatars
+        RefreshPowerDisplay();
+
         Debug.Log($"{cardName} ({cardType}) placed at: {point.name}");
+    }
+
+    /// <summary>
+    /// Update the power text display (visible on board for avatars).
+    /// Call after any power modification (magic effects, buffs, etc.)
+    /// </summary>
+    public void RefreshPowerDisplay()
+    {
+        if (powerText != null)
+        {
+            if (cardType == CardType.Avatar && !inHand)
+            {
+                powerText.gameObject.SetActive(true);
+                powerText.text = power.ToString();
+            }
+            else
+            {
+                powerText.gameObject.SetActive(false);
+            }
+        }
     }
 
     public void MoveToPoint(Vector3 pointToMoveTo, Quaternion rotToMatch)
