@@ -26,6 +26,9 @@ public class GameManager : MonoBehaviour
     public Player player1;
     public Player player2;
 
+    [Header("Shared Zones")]
+    public CardPlacePoint landMagicZone;   // Shared LandMagic zone (centre of board)
+
     // ── GAME STATE ─────────────────────────────────────────────────
     [Header("Current State (Read Only)")]
     public TurnPlayer currentPlayer = TurnPlayer.Player1;
@@ -108,6 +111,20 @@ public class GameManager : MonoBehaviour
         // ── Auto-discover any missing zone references (fixes broken Inspector refs) ──
         player1.AutoDiscoverZones();
         player2.AutoDiscoverZones();
+
+        // ── Auto-discover shared Land Magic zone if not assigned ──
+        if (landMagicZone == null)
+        {
+            foreach (var zone in FindObjectsOfType<CardPlacePoint>())
+            {
+                if (zone.zoneType == ZoneType.LandMagic)
+                {
+                    landMagicZone = zone;
+                    Debug.Log("[GameManager] Auto-discovered LandMagic zone.");
+                    break;
+                }
+            }
+        }
 
         // ── Adjust LIFE zone spacing for horizontal cards ──
         player1.AdjustLifeZoneSpacing(1.35f);
@@ -414,6 +431,10 @@ public class GameManager : MonoBehaviour
 
     private void SwitchTurn()
     {
+        // Clean up temporary buffs from this turn before switching
+        if (MagicController.instance != null)
+            MagicController.instance.CleanupTempBuffs();
+
         isFirstTurn   = false;
         turnNumber++;
         currentPlayer = (currentPlayer == TurnPlayer.Player1)

@@ -28,10 +28,6 @@ public class CombatController : MonoBehaviour
     public CombatState combatState = CombatState.Idle;
     public Card selectedAttacker;
 
-    // ── ลักหัด (equal power decision) ────────────────────────────
-    private Card pendingLakHatAttacker;
-    private Card pendingLakHatDefender;
-
     private void Awake()
     {
         instance = this;
@@ -370,33 +366,60 @@ public class CombatController : MonoBehaviour
 
         if (atkPower > defPower)
         {
-            // Attacker wins → defender destroyed
+            // Attacker wins → defender destroyed, attacker takes damage
             SendToHell(defender);
-            UIController.instance.ShowCombatUI(
-                $"<color=green><b>{attacker.cardName}</b> ({atkPower})</color> defeats " +
-                $"<color=red>{defender.cardName} ({defPower})</color>!");
+            attacker.power -= defPower;
+
+            if (attacker.power <= 0)
+            {
+                // Attacker also falls from the damage taken
+                SendToHell(attacker);
+                UIController.instance.ShowCombatUI(
+                    $"<color=green><b>{attacker.cardName}</b> ({atkPower})</color> defeats " +
+                    $"<color=red>{defender.cardName} ({defPower})</color>!\n" +
+                    $"But <color=red>{attacker.cardName} also falls!</color> (power reduced to 0)");
+            }
+            else
+            {
+                attacker.RefreshPowerDisplay();
+                UIController.instance.ShowCombatUI(
+                    $"<color=green><b>{attacker.cardName}</b> ({atkPower})</color> defeats " +
+                    $"<color=red>{defender.cardName} ({defPower})</color>!\n" +
+                    $"{attacker.cardName} power: {atkPower} → <b>{attacker.power}</b>");
+            }
         }
         else if (defPower > atkPower)
         {
-            // Defender wins → attacker destroyed
+            // Defender wins → attacker destroyed, defender takes damage
             SendToHell(attacker);
-            UIController.instance.ShowCombatUI(
-                $"<color=red><b>{attacker.cardName}</b> ({atkPower})</color> was defeated by " +
-                $"<color=green>{defender.cardName} ({defPower})</color>!");
+            defender.power -= atkPower;
+
+            if (defender.power <= 0)
+            {
+                // Defender also falls from the damage taken
+                SendToHell(defender);
+                UIController.instance.ShowCombatUI(
+                    $"<color=green>{defender.cardName} ({defPower})</color> defeats " +
+                    $"<color=red><b>{attacker.cardName}</b> ({atkPower})</color>!\n" +
+                    $"But <color=red>{defender.cardName} also falls!</color> (power reduced to 0)");
+            }
+            else
+            {
+                defender.RefreshPowerDisplay();
+                UIController.instance.ShowCombatUI(
+                    $"<color=green>{defender.cardName} ({defPower})</color> defeats " +
+                    $"<color=red><b>{attacker.cardName}</b> ({atkPower})</color>!\n" +
+                    $"{defender.cardName} power: {defPower} → <b>{defender.power}</b>");
+            }
         }
         else
         {
-            // Equal power → ลักหัด rule: attacker decides
-            pendingLakHatAttacker = attacker;
-            pendingLakHatDefender = defender;
-
-            UIController.instance.ShowLakHatUI(attacker.cardName, defender.cardName, atkPower);
-            Debug.Log($"[Combat] ลักหัด! {attacker.cardName} ({atkPower}) = {defender.cardName} ({defPower}). Attacker decides.");
-
-            // Pause combat — wait for player decision
-            HighlightValidTargets(false);
-            combatState = CombatState.Idle;
-            return;
+            // Equal power → both destroyed
+            SendToHell(attacker);
+            SendToHell(defender);
+            UIController.instance.ShowCombatUI(
+                $"<color=yellow>DRAW!</color> Both {attacker.cardName} and {defender.cardName} " +
+                $"destroyed ({atkPower} = {defPower})!");
         }
 
         // Clear target highlights and refresh HUD
@@ -473,11 +496,42 @@ public class CombatController : MonoBehaviour
 
     public void SendToHell(Card card)
     {
-        // Clear board slot
+        // ── Remove from Land buff tracking if this avatar was land-buffed ──
+        if (MagicController.instance != null)
+            MagicController.instance.RemoveLandBuff(card);
+
+        // ── Modification cascade: destroy all mods attached to this avatar ──
+        if (card.attachedMods != null && card.attachedMods.Count > 0)
+        {
+            var modsToDestroy = new System.Collections.Generic.List<Card>(card.attachedMods);
+            card.attachedMods.Clear();
+            foreach (Card mod in modsToDestroy)
+            {
+                // Undo the buff before destroying
+                MagicEffectResolver.UndoEffect(mod, card);
+                mod.equippedTo = null;
+                SendToHell(mod); // Recursive — sends each mod to Hell too
+            }
+            card.RefreshPowerDisplay();
+        }
+
+        // ── If this card IS a modification, unlink from its avatar ──
+        if (card.equippedTo != null)
+        {
+            card.equippedTo.attachedMods.Remove(card);
+            card.equippedTo = null;
+        }
+
+        // Clear board slot — handle both single-card and multi-card zones
         if (card.assignedPlace != null)
         {
-            card.assignedPlace.activeCard = null;
-            card.assignedPlace = null;
+            if (card.assignedPlace.isMultiCardZone)
+                card.assignedPlace.RemoveCard(card);
+            else
+            {
+                card.assignedPlace.activeCard = null;
+                card.assignedPlace = null;
+            }
         }
 
         // Reset card state
@@ -493,43 +547,6 @@ public class CombatController : MonoBehaviour
             cardOwner.hellZone.AddCard(card);
             Debug.Log($"[Combat] {card.cardName} → {card.cardOwner}'s Hell Zone.");
         }
-    }
-
-    // ════════════════════════════════════════════════════════════════
-    //  ลักหัด DECISION (equal power — attacker chooses)
-    // ════════════════════════════════════════════════════════════════
-
-    /// <summary>Attacker chose: destroy both cards.</summary>
-    public void OnLakHatDestroyBoth()
-    {
-        if (pendingLakHatAttacker == null || pendingLakHatDefender == null) return;
-
-        SendToHell(pendingLakHatAttacker);
-        SendToHell(pendingLakHatDefender);
-        FinishLakHat($"Both {pendingLakHatAttacker.cardName} and {pendingLakHatDefender.cardName} destroyed!");
-    }
-
-    /// <summary>Attacker chose: keep both cards alive.</summary>
-    public void OnLakHatKeepBoth()
-    {
-        if (pendingLakHatAttacker == null || pendingLakHatDefender == null) return;
-
-        // Both survive — attacker is already tapped from ResolveCombat
-        FinishLakHat($"Both {pendingLakHatAttacker.cardName} and {pendingLakHatDefender.cardName} survive!");
-    }
-
-    private void FinishLakHat(string resultMsg)
-    {
-        UIController.instance.ShowCombatUI($"<color=yellow>ลักหัด!</color> {resultMsg}");
-        UIController.instance.HideLakHatUI();
-        UIController.instance.UpdateGameInfo();
-
-        pendingLakHatAttacker = null;
-        pendingLakHatDefender = null;
-        selectedAttacker = null;
-        combatState = CombatState.SelectingAttacker;
-
-        Debug.Log($"[Combat] ลักหัด resolved: {resultMsg}");
     }
 
     // ════════════════════════════════════════════════════════════════

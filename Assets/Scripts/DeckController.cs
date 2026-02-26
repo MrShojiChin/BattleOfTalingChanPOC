@@ -118,6 +118,154 @@ public class DeckController : MonoBehaviour
     public int CardsRemaining => activeCards.Count;
 
     // ════════════════════════════════════════════════════════════════
+    //  MILL / SEARCH (used by Magic effects)
+    // ════════════════════════════════════════════════════════════════
+
+    /// <summary>
+    /// ถล่มสูป (Thon Soop): Send the top N cards from the deck to the Hell Zone.
+    /// Cards are instantiated briefly so they appear in the Hell Zone card list.
+    /// Returns how many cards were actually milled.
+    /// </summary>
+    public List<Card> MillCards(int count)
+    {
+        List<Card> milledCards = new List<Card>();
+        for (int i = 0; i < count; i++)
+        {
+            if (activeCards.Count == 0) break;
+
+            BaseCardSO topCard = activeCards[0];
+            activeCards.RemoveAt(0);
+
+            // Spawn the card, tag it, set up, then send to Hell
+            Vector3 spawnPos = (owner.deckZone != null)
+                ? owner.deckZone.transform.position
+                : transform.position;
+
+            Card newCard = null;
+            if (topCard is AvatarCardSO avatar)
+            {
+                newCard = Instantiate(avatarCardPrefab, spawnPos, Quaternion.identity);
+                newCard.cardType = CardType.Avatar;
+                newCard.avatarSO = avatar;
+            }
+            else if (topCard is MagicCardSO magic)
+            {
+                newCard = Instantiate(magicCardPrefab, spawnPos, Quaternion.identity);
+                newCard.cardType = CardType.Magic;
+                newCard.magicSO = magic;
+            }
+
+            if (newCard != null)
+            {
+                newCard.cardOwner = owner.playerId;
+                newCard.SetupCard();
+                CombatController.instance.SendToHell(newCard);
+                milledCards.Add(newCard);
+                Debug.Log($"[Mill] {owner.playerId}: {newCard.cardName} sent from deck to Hell.");
+            }
+        }
+        return milledCards;
+    }
+
+    /// <summary>
+    /// Search the deck for the first Avatar card with cost ≤ maxCost.
+    /// If found, instantiate it, add to hand, and shuffle the deck.
+    /// Returns the drawn Card, or null if not found.
+    /// </summary>
+    public Card SearchAndDrawAvatar(int maxCost)
+    {
+        // Find first matching avatar SO in the deck
+        int foundIndex = -1;
+        for (int i = 0; i < activeCards.Count; i++)
+        {
+            if (activeCards[i] is AvatarCardSO avatarSO && avatarSO.cost <= maxCost)
+            {
+                foundIndex = i;
+                break;
+            }
+        }
+
+        if (foundIndex < 0) return null;
+
+        BaseCardSO foundSO = activeCards[foundIndex];
+        activeCards.RemoveAt(foundIndex);
+
+        // Shuffle remaining deck
+        for (int i = activeCards.Count - 1; i > 0; i--)
+        {
+            int r = Random.Range(0, i + 1);
+            (activeCards[i], activeCards[r]) = (activeCards[r], activeCards[i]);
+        }
+
+        // Instantiate and add to hand
+        Vector3 spawnPos = (owner.deckZone != null)
+            ? owner.deckZone.transform.position
+            : transform.position;
+
+        Card newCard = Instantiate(avatarCardPrefab, spawnPos, Quaternion.identity);
+        newCard.cardType = CardType.Avatar;
+        newCard.avatarSO = (AvatarCardSO)foundSO;
+        newCard.cardOwner = owner.playerId;
+        newCard.SetupCard();
+
+        owner.hand.AddCardToHand(newCard);
+        Debug.Log($"[Search] {owner.playerId}: Found {newCard.cardName} (cost {newCard.cost}) in deck → added to hand. Deck shuffled.");
+
+        return newCard;
+    }
+
+    /// <summary>
+    /// Search the deck for the first Avatar card whose name starts with namePrefix
+    /// and cost ≤ maxCost. If found, instantiate, add to hand, and shuffle deck.
+    /// The returned card is marked cannotBeTribute = true.
+    /// </summary>
+    public Card SearchAndDrawAvatarByName(string namePrefix, int maxCost)
+    {
+        int foundIndex = -1;
+        for (int i = 0; i < activeCards.Count; i++)
+        {
+            if (activeCards[i] is AvatarCardSO avatarSO
+                && avatarSO.cost <= maxCost
+                && avatarSO.cardName.StartsWith(namePrefix, System.StringComparison.Ordinal))
+            {
+                foundIndex = i;
+                break;
+            }
+        }
+
+        if (foundIndex < 0) return null;
+
+        BaseCardSO foundSO = activeCards[foundIndex];
+        activeCards.RemoveAt(foundIndex);
+
+        // Shuffle remaining deck (Fisher-Yates)
+        for (int i = activeCards.Count - 1; i > 0; i--)
+        {
+            int r = Random.Range(0, i + 1);
+            (activeCards[i], activeCards[r]) = (activeCards[r], activeCards[i]);
+        }
+
+        // Instantiate and add to hand
+        Vector3 spawnPos = (owner.deckZone != null)
+            ? owner.deckZone.transform.position
+            : transform.position;
+
+        Card newCard = Instantiate(avatarCardPrefab, spawnPos, Quaternion.identity);
+        newCard.cardType = CardType.Avatar;
+        newCard.avatarSO = (AvatarCardSO)foundSO;
+        newCard.cardOwner = owner.playerId;
+        newCard.SetupCard();
+
+        // Mark as cannot be used for tribute/summon cost
+        newCard.cannotBeTribute = true;
+
+        owner.hand.AddCardToHand(newCard);
+        Debug.Log($"[Search] {owner.playerId}: Found '{newCard.cardName}' by name (cost {newCard.cost}) → hand. Cannot be tribute. Deck shuffled.");
+
+        return newCard;
+    }
+
+    // ════════════════════════════════════════════════════════════════
     //  LIFE CARD DEALING
     // ════════════════════════════════════════════════════════════════
 

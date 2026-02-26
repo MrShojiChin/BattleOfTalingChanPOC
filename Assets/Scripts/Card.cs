@@ -20,7 +20,7 @@ public class Card : MonoBehaviour, IPointerEnterHandler, IPointerExitHandler, IP
     public int cost;
     public int power;
     public int gem;
-    public string symbol;
+    public CardSymbol cardSymbol;
     public string description;
     public string cardName;
     public CardColor avatarColor;
@@ -30,6 +30,13 @@ public class Card : MonoBehaviour, IPointerEnterHandler, IPointerExitHandler, IP
     [Header("Battle State")]
     public bool isTapped;          // นอน (sleeping/tapped) — already attacked this turn
     public int  turnPlaced = -1;   // Turn number when placed on board (for summon sickness)
+
+    // ── MODIFICATION STATE ────────────────────────────────────────
+    [Header("Modification")]
+    public List<Card> attachedMods = new List<Card>();  // Mods equipped TO this avatar
+    public Card equippedTo;                              // Avatar this mod is attached to
+    [HideInInspector] public int appliedEffectValue;     // For undoing buffs when mod destroyed
+    [HideInInspector] public bool cannotBeTribute;       // Searched cards can't be used as summon cost
 
     // ── LIFE CARD STATE ─────────────────────────────────────────
     [Header("Life Card")]
@@ -147,7 +154,7 @@ public class Card : MonoBehaviour, IPointerEnterHandler, IPointerExitHandler, IP
             cost = avatarSO.cost;
             gem = avatarSO.gem;
             power = avatarSO.power;
-            symbol = avatarSO.symbol;
+            cardSymbol = avatarSO.cardSymbol;
             avatarColor = avatarSO.avatarColor;
             gemColor = avatarSO.gemColor;
             if (characterArt) characterArt.sprite = avatarSO.cardCharacterSprite;
@@ -159,7 +166,7 @@ public class Card : MonoBehaviour, IPointerEnterHandler, IPointerExitHandler, IP
             description = magicSO.description;
             cost = 0;
             gem = magicSO.gem;
-            symbol = magicSO.symbol;
+            cardSymbol = magicSO.cardSymbol;
             avatarColor = CardColor.Neutral;
             gemColor = magicSO.gemColor;
             if (characterArt) characterArt.sprite = magicSO.cardCharacterSprite;
@@ -172,7 +179,7 @@ public class Card : MonoBehaviour, IPointerEnterHandler, IPointerExitHandler, IP
             cost = 0;
             power = 0;
             gem = lifeCardSO.gem;
-            symbol = lifeCardSO.symbol;
+            cardSymbol = lifeCardSO.cardSymbol;
             avatarColor = CardColor.Neutral;
             gemColor = CardColor.Neutral;
 
@@ -265,6 +272,12 @@ public class Card : MonoBehaviour, IPointerEnterHandler, IPointerExitHandler, IP
 
     private void HandleDrop(CardPlacePoint point)
     {
+        // Block all drops during React confirmation or Hell activation
+        if (MagicController.instance != null
+            && (MagicController.instance.magicState == MagicPlayState.AwaitingReactConfirm
+             || MagicController.instance.magicState == MagicPlayState.AwaitingHellActivation))
+            return;
+
         BattleController bc = BattleController.instance;
 
         // ── CASE A: Dropping a tribute card onto the Hell Point during CostStep ──
@@ -303,24 +316,15 @@ public class Card : MonoBehaviour, IPointerEnterHandler, IPointerExitHandler, IP
 
         // ── CASE C: Normal placement (free avatar cost==0, or magic card) ──
 
-        // Magic cards → multi-card zone (stacking)
+        // Magic cards → route through MagicController (handles Normal/Modification/React/Land)
         if (cardType == CardType.Magic && point.isPlayerMagicPoint && point.IsCurrentPlayerZone())
         {
             isSelected = false;
             inHand = false;
             EnableInteraction();
-            point.AddCard(this);  // Uses multi-card stacking
             HandController theHC = OwnerHand;
             if (theHC != null) theHC.RemoveCardFromHand(this);
-            Debug.Log($"{cardName} (Magic) placed in Magic Zone (stack #{point.activeCards.Count}).");
-
-            // Resolve magic effect (if any)
-            if (magicSO != null && magicSO.effect != MagicEffect.None)
-            {
-                MagicEffectResolver.ResolveEffect(this);
-                Debug.Log($"[Magic] {cardName} effect resolved: {magicSO.effect} ({magicSO.effectValue})");
-            }
-
+            MagicController.instance.PlayMagicCard(this, point);
             UIController.instance?.UpdateGameInfo();
             return;
         }
@@ -433,6 +437,30 @@ public class Card : MonoBehaviour, IPointerEnterHandler, IPointerExitHandler, IP
                     ToggleMulliganSelection(); // Right-click cancels selection
             }
             return; // No other interactions during setup
+        }
+
+        // ── REACT / HELL ACTIVATION: block all card interaction while waiting ──
+        if (MagicController.instance != null
+            && (MagicController.instance.magicState == MagicPlayState.AwaitingReactConfirm
+             || MagicController.instance.magicState == MagicPlayState.AwaitingHellActivation))
+        {
+            return; // Block all interaction — owner must click Activate or Keep
+        }
+
+        // ── MODIFICATION TARGET SELECTION: route clicks to MagicController ──
+        if (MagicController.instance != null
+            && MagicController.instance.magicState == MagicPlayState.SelectingModTarget)
+        {
+            if (isLeftClick && !inHand && cardType == CardType.Avatar
+                && cardOwner == GameManager.instance.currentPlayer)
+            {
+                MagicController.instance.HandleAvatarClickForMod(this);
+            }
+            else if (isRightClick)
+            {
+                MagicController.instance.CancelModSelection();
+            }
+            return; // Block all other interaction during mod selection
         }
 
         // ── LIFE CARDS: never draggable, only clickable in Battle Phase ──
@@ -573,6 +601,10 @@ public class Card : MonoBehaviour, IPointerEnterHandler, IPointerExitHandler, IP
         RefreshPowerDisplay();
 
         Debug.Log($"{cardName} ({cardType}) placed at: {point.name}");
+
+        // Trigger React magic and Land buffs for newly summoned avatars
+        if (cardType == CardType.Avatar && MagicController.instance != null)
+            MagicController.instance.OnAvatarSummoned(this);
     }
 
     /// <summary>

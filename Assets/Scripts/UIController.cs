@@ -116,17 +116,7 @@ public class UIController : MonoBehaviour
     public TMP_Text p2LifeCountText;       // "LIFE: 5/5"
 
     // ════════════════════════════════════════════════════════════════
-    //  11. ลักหัด DECISION UI (equal power combat)
-    // ════════════════════════════════════════════════════════════════
-
-    [Header("── ลักหัด Decision UI ──────────────────────")]
-    public GameObject lakHatPanel;
-    public TMP_Text   lakHatInfoText;
-    public Button     lakHatDestroyButton;  // "Destroy Both"
-    public Button     lakHatKeepButton;     // "Keep Both"
-
-    // ════════════════════════════════════════════════════════════════
-    //  12. HELL ZONE VIEWER (discard pile browser)
+    //  11. HELL ZONE VIEWER (discard pile browser)
     // ════════════════════════════════════════════════════════════════
 
     [Header("── Hell Zone Viewer ──────────────────────")]
@@ -145,6 +135,16 @@ public class UIController : MonoBehaviour
     public Button     discardConfirmButton;  // "Discard Selected"
 
     // ════════════════════════════════════════════════════════════════
+    //  12. REACT CONFIRMATION UI
+    // ════════════════════════════════════════════════════════════════
+
+    [Header("── React Confirmation UI ──────────────")]
+    public GameObject reactPanel;            // Panel shown when React can trigger
+    public TMP_Text   reactInfoText;         // "React! [card] can destroy [avatar]. Activate?"
+    public Button     reactActivateButton;   // "Activate" — trigger the React card
+    public Button     reactKeepButton;       // "Keep" — save React for later
+
+    // ════════════════════════════════════════════════════════════════
     //  SETUP
     // ════════════════════════════════════════════════════════════════
 
@@ -161,8 +161,8 @@ public class UIController : MonoBehaviour
         HideGameOverUI();
         HideDiscardUI();
         HideCardPreview();
-        HideLakHatUI();
         HideHellZoneViewer();
+        HideReactUI();
 
         // Wire the Next Phase button to GameManager
         if (nextPhaseButton != null)
@@ -178,15 +178,27 @@ public class UIController : MonoBehaviour
         if (discardConfirmButton != null)
             discardConfirmButton.onClick.AddListener(() => GameManager.instance.OnDiscardConfirmed());
 
-        // Wire ลักหัด buttons to CombatController
-        if (lakHatDestroyButton != null)
-            lakHatDestroyButton.onClick.AddListener(() => CombatController.instance.OnLakHatDestroyBoth());
-        if (lakHatKeepButton != null)
-            lakHatKeepButton.onClick.AddListener(() => CombatController.instance.OnLakHatKeepBoth());
-
         // Wire Hell Zone viewer close button
         if (hellViewerCloseButton != null)
             hellViewerCloseButton.onClick.AddListener(HideHellZoneViewer);
+
+        // Wire React / Hell Activation confirmation buttons (shared panel, routes by state)
+        if (reactActivateButton != null)
+            reactActivateButton.onClick.AddListener(() => {
+                if (MagicController.instance == null) return;
+                if (MagicController.instance.magicState == MagicPlayState.AwaitingReactConfirm)
+                    MagicController.instance.OnReactActivate();
+                else if (MagicController.instance.magicState == MagicPlayState.AwaitingHellActivation)
+                    MagicController.instance.OnHellActivate();
+            });
+        if (reactKeepButton != null)
+            reactKeepButton.onClick.AddListener(() => {
+                if (MagicController.instance == null) return;
+                if (MagicController.instance.magicState == MagicPlayState.AwaitingReactConfirm)
+                    MagicController.instance.OnReactKeep();
+                else if (MagicController.instance.magicState == MagicPlayState.AwaitingHellActivation)
+                    MagicController.instance.OnHellKeep();
+            });
     }
 
     // ════════════════════════════════════════════════════════════════
@@ -313,6 +325,34 @@ public class UIController : MonoBehaviour
     }
 
     // ════════════════════════════════════════════════════════════════
+    //  MAGIC UI  (reuses combat panel — they never overlap)
+    // ════════════════════════════════════════════════════════════════
+
+    /// <summary>Show magic selection/status message (reuses combat panel).</summary>
+    public void ShowMagicUI(string message) => ShowCombatUI(message);
+
+    /// <summary>Hide magic UI.</summary>
+    public void HideMagicUI() => HideCombatUI();
+
+    // ════════════════════════════════════════════════════════════════
+    //  REACT CONFIRMATION UI
+    // ════════════════════════════════════════════════════════════════
+
+    /// <summary>Show the React confirmation panel with Activate/Keep buttons.</summary>
+    public void ShowReactUI(string message)
+    {
+        if (reactPanel != null) reactPanel.SetActive(true);
+        if (reactInfoText != null) reactInfoText.text = message;
+    }
+
+    /// <summary>Hide the React confirmation panel.</summary>
+    public void HideReactUI()
+    {
+        if (reactPanel != null) reactPanel.SetActive(false);
+        if (reactInfoText != null) reactInfoText.text = "";
+    }
+
+    // ════════════════════════════════════════════════════════════════
     //  COMBAT UI  (Battle Phase info panel)
     // ════════════════════════════════════════════════════════════════
 
@@ -426,33 +466,6 @@ public class UIController : MonoBehaviour
     }
 
     // ════════════════════════════════════════════════════════════════
-    //  ลักหัด DECISION UI — equal power combat choice
-    // ════════════════════════════════════════════════════════════════
-
-    public void ShowLakHatUI(string atkName, string defName, int power)
-    {
-        if (lakHatPanel != null) lakHatPanel.SetActive(true);
-        if (lakHatInfoText != null)
-            lakHatInfoText.text =
-                $"<color=yellow><b>ลักหัด!</b></color>\n" +
-                $"{atkName} ({power}) = {defName} ({power})\n\n" +
-                $"Destroy both or keep both alive?";
-
-        // Hide the next phase button while deciding
-        if (nextPhaseButton != null)
-            nextPhaseButton.gameObject.SetActive(false);
-    }
-
-    public void HideLakHatUI()
-    {
-        if (lakHatPanel != null) lakHatPanel.SetActive(false);
-
-        // Restore the next phase button (we're still in Battle Phase)
-        if (nextPhaseButton != null)
-            nextPhaseButton.gameObject.SetActive(true);
-    }
-
-    // ════════════════════════════════════════════════════════════════
     //  HELL ZONE VIEWER — discard pile browser
     // ════════════════════════════════════════════════════════════════
 
@@ -479,6 +492,9 @@ public class UIController : MonoBehaviour
                 for (int i = 0; i < player.hellZone.activeCards.Count; i++)
                 {
                     Card c = player.hellZone.activeCards[i];
+                    string symbolStr = c.cardSymbol != CardSymbol.None
+                        ? $" <color=#FFCC00>{GetSymbolThaiName(c.cardSymbol)}</color>"
+                        : "";
                     string typeTag = c.cardType switch
                     {
                         CardType.Avatar => $"<color=#FF6666>AVA</color> Pw:{c.power}",
@@ -486,7 +502,7 @@ public class UIController : MonoBehaviour
                         CardType.Life   => "<color=#999999>LIFE</color>",
                         _               => "???"
                     };
-                    sb.AppendLine($"{i + 1}. {c.cardName}  [{typeTag}]  Gem:{c.gem}");
+                    sb.AppendLine($"{i + 1}. {c.cardName}  [{typeTag}]{symbolStr}  Gem:{c.gem}");
                 }
                 hellViewerCardList.text = sb.ToString();
             }
@@ -519,11 +535,15 @@ public class UIController : MonoBehaviour
 
         if (cardPreviewType != null)
         {
+            string symbolTag = card.cardSymbol != CardSymbol.None
+                ? $"  [{GetSymbolThaiName(card.cardSymbol)}]"
+                : "";
+
             cardPreviewType.text = card.cardType switch
             {
-                CardType.Avatar => $"AVATAR — {card.avatarColor}",
-                CardType.Magic  => $"MAGIC — {(card.magicSO != null ? card.magicSO.magicType.ToString() : "Normal")}",
-                CardType.Life   => "LIFE CARD",
+                CardType.Avatar => $"AVATAR — {card.avatarColor}{symbolTag}",
+                CardType.Magic  => $"MAGIC — {(card.magicSO != null ? card.magicSO.magicType.ToString() : "Normal")}{symbolTag}",
+                CardType.Life   => $"LIFE CARD{symbolTag}",
                 _               => card.cardType.ToString()
             };
         }
@@ -539,6 +559,21 @@ public class UIController : MonoBehaviour
                 stats = $"Gem: {card.gem}";
             cardPreviewStats.text = stats;
         }
+    }
+
+    /// <summary>Get the Thai display name for a card symbol.</summary>
+    private string GetSymbolThaiName(CardSymbol symbol)
+    {
+        return symbol switch
+        {
+            CardSymbol.Giant    => "ยักษ์",
+            CardSymbol.God      => "เทพ",
+            CardSymbol.Human    => "คน",
+            CardSymbol.Devil    => "นรก",
+            CardSymbol.Ghost    => "ผี",
+            CardSymbol.Sorcerer => "จอมเวทย์",
+            _                   => symbol.ToString()
+        };
     }
 
     /// <summary>Hide the card preview panel.</summary>

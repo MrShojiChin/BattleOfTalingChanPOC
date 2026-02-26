@@ -93,6 +93,12 @@ public class BattleController : MonoBehaviour
         if (currentState != SummonState.CostStep) return false;
         if (tribute == pendingAvatar) return false;
 
+        if (tribute.cannotBeTribute)
+        {
+            Debug.Log($"[Summon] {tribute.cardName} cannot be used as tribute (searched from deck).");
+            return false;
+        }
+
         if (tribute.gem <= 0)
         {
             Debug.Log($"[Phase 2] {tribute.cardName} has 0 gems — cannot tribute.");
@@ -181,7 +187,15 @@ public class BattleController : MonoBehaviour
 
         Debug.Log($"[Summon] {pendingAvatar.cardName} summoned to {placePoint.name}!");
 
+        // Save reference before ResetSummonState() clears pendingAvatar
+        Card summonedAvatar = pendingAvatar;
+
         ResetSummonState();
+
+        // Trigger React magic and Land buffs for newly summoned avatar
+        if (MagicController.instance != null)
+            MagicController.instance.OnAvatarSummoned(summonedAvatar);
+
         UIController.instance?.UpdateGameInfo();
     }
 

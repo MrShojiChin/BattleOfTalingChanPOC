@@ -7,5 +7,5 @@ public class BaseCardSO : ScriptableObject
     [TextArea] public string description;
     public Sprite cardCharacterSprite;
     public int gem;
-    public string symbol;
+    public CardSymbol cardSymbol = CardSymbol.None;
 }
