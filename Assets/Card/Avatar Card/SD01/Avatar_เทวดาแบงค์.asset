@@ -16,8 +16,18 @@ MonoBehaviour:
   description: 
   cardCharacterSprite: {fileID: 21300000, guid: cc666851b0497a3409fe68c5e9452e8e, type: 3}
   gem: 0
-  symbol: 
-  avatarColor: 0
+  cardSymbol: 2
+  avatarColor: 1
   gemColor: 0
   cost: 1
   power: 4
+  abilities: 0
+  jutiSearchPrefix: 
+  combatThonSoopMill: 0
+  combatThonSoopPowerBoost: 0
+  hellScalingNamePrefix: 
+  jutiTargetPowerValue: 0
+  jutiDrawCount: 0
+  attackPowerBoost: 0
+  auraSymbol: 0
+  auraPowerBoost: 0

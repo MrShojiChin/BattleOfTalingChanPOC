@@ -14,10 +14,20 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::AvatarCardSO
   cardName: 
   description: 
-  cardCharacterSprite: {fileID: 0}
-  gem: 0
-  symbol: 
+  cardCharacterSprite: {fileID: 21300000, guid: df95c2a1e587f1341b83a0d88df44e09, type: 3}
+  gem: 1
+  cardSymbol: 1
   avatarColor: 0
   gemColor: 0
   cost: 0
-  power: 0
+  power: 1
+  abilities: 0
+  jutiSearchPrefix: 
+  combatThonSoopMill: 0
+  combatThonSoopPowerBoost: 0
+  hellScalingNamePrefix: 
+  jutiTargetPowerValue: 0
+  jutiDrawCount: 0
+  attackPowerBoost: 0
+  auraSymbol: 0
+  auraPowerBoost: 0

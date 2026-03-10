@@ -1,4 +1,5 @@
 using UnityEngine;
+using System.Collections;
 using System.Collections.Generic;
 
 /// <summary>
@@ -126,6 +127,10 @@ public class GameManager : MonoBehaviour
             }
         }
 
+        // ── Adjust AVATAR zone spacing ──
+        player1.AdjustAvatarZoneSpacing(2.5f);
+        player2.AdjustAvatarZoneSpacing(2.5f);
+
         // ── Adjust LIFE zone spacing for horizontal cards ──
         player1.AdjustLifeZoneSpacing(1.35f);
         player2.AdjustLifeZoneSpacing(1.35f);
@@ -249,9 +254,21 @@ public class GameManager : MonoBehaviour
         isFirstTurn   = true;
         turnNumber    = 1;
 
-        // P1 skips Draw Phase on Turn 1 → go straight to Main
-        Debug.Log("[GameManager] Setup complete! Turn 1 — P1 starts at Main Phase.");
-        EnterMainPhase();
+        // ── HAND SLIDE: P1 visible, P2 hidden at game start ──
+        player1.hand.SlideUp();
+        player2.hand.SlideDown();
+
+        // P1 draws +2 bonus cards on Turn 1 sequentially, then goes to Main Phase
+        Player cp = CurrentPlayerObj;
+        if (cp != null && cp.deck != null)
+        {
+            Debug.Log("[GameManager] Setup complete! Turn 1 — P1 draws +2 bonus cards.");
+            StartCoroutine(DrawThenMainPhase(cp, 2));
+        }
+        else
+        {
+            EnterMainPhase();
+        }
     }
 
     // ════════════════════════════════════════════════════════════════
@@ -264,11 +281,30 @@ public class GameManager : MonoBehaviour
     /// - If hand has fewer than 3 cards → draw until 3
     /// - If hand has 3+ cards → draw 1
     /// - Avatars wake up (untap / ลุก) at the start of their owner's turn
+    /// Shows a "Draw Phase" stomp announcement before drawing.
     /// </summary>
     private void EnterDrawPhase()
     {
         currentPhase = TurnPhase.Draw;
         UIController.instance.UpdateHUD(currentPlayer, currentPhase);
+
+        // Show stomp animation, then proceed with draw logic
+        if (PhaseAnnouncer.instance != null)
+        {
+            PhaseAnnouncer.instance.AnnouncePhase("Draw Phase", () => ExecuteDrawPhase());
+        }
+        else
+        {
+            ExecuteDrawPhase();
+        }
+    }
+
+    /// <summary>Executes the actual Draw Phase logic after the announcement.</summary>
+    private void ExecuteDrawPhase()
+    {
+        // ── HAND SLIDE: current player's hand up, opponent's hand down ──
+        CurrentPlayerObj.hand.SlideUp();
+        OpponentPlayerObj.hand.SlideDown();
 
         // Use CURRENT player's hand and deck (no more singletons)
         Player cp = CurrentPlayerObj;
@@ -293,25 +329,10 @@ public class GameManager : MonoBehaviour
 
         // Normal draw rules
         int currentHandSize = cp.hand.heldCards.Count;
-        if (currentHandSize < 3)
-        {
-            // Draw up to 3
-            int cardsToDraw = 3 - currentHandSize;
-            for (int i = 0; i < cardsToDraw; i++)
-            {
-                cp.deck.DrawCardToHand();
-                if (isGameOver) return; // Deck-out triggered
-            }
-        }
-        else
-        {
-            // Draw exactly 1
-            cp.deck.DrawCardToHand();
-            if (isGameOver) return; // Deck-out triggered
-        }
+        int cardsToDraw = (currentHandSize < 3) ? (3 - currentHandSize) : 1;
 
-        // Auto-advance to Main Phase after drawing
-        EnterMainPhase();
+        // Draw sequentially, then advance to Main Phase
+        StartCoroutine(DrawThenMainPhase(cp, cardsToDraw));
     }
 
     /// <summary>
@@ -323,7 +344,37 @@ public class GameManager : MonoBehaviour
     {
         currentPhase = TurnPhase.Main;
         UIController.instance.UpdateHUD(currentPlayer, currentPhase);
+
+        // ── LIFE CARD EFFECT: Draw queued cards from LIFE flips (sequentially) ──
+        Player cp = CurrentPlayerObj;
+        if (cp != null && cp.pendingLifeDraws > 0)
+        {
+            int draws = cp.pendingLifeDraws;
+            cp.pendingLifeDraws = 0;
+            if (cp.deck != null)
+            {
+                Debug.Log($"[GameManager] {currentPlayer} drawing {draws} card(s) from LIFE effect...");
+                StartCoroutine(SequentialLifeDraws(cp, draws));
+            }
+        }
+
         Debug.Log($"[GameManager] {currentPlayer} — MAIN PHASE");
+    }
+
+    /// <summary>Draw N cards sequentially, then enter Main Phase.</summary>
+    private IEnumerator DrawThenMainPhase(Player cp, int count)
+    {
+        yield return cp.deck.DrawMultipleCards(count);
+        if (!isGameOver)
+            EnterMainPhase();
+    }
+
+    /// <summary>Draw pending LIFE effect cards sequentially during Main Phase.</summary>
+    private IEnumerator SequentialLifeDraws(Player cp, int count)
+    {
+        yield return cp.deck.DrawMultipleCards(count);
+        Debug.Log($"[GameManager] {currentPlayer} drew {count} card(s) from LIFE effect.");
+        UIController.instance?.UpdateGameInfo();
     }
 
     /// <summary>
@@ -336,6 +387,9 @@ public class GameManager : MonoBehaviour
     {
         currentPhase = TurnPhase.Battle;
         UIController.instance.UpdateHUD(currentPlayer, currentPhase);
+
+        // ── HAND SLIDE: no hand interaction during Battle Phase ──
+        CurrentPlayerObj.hand.SlideDown();
 
         // Start combat selection
         if (CombatController.instance != null)
@@ -361,6 +415,9 @@ public class GameManager : MonoBehaviour
 
         if (handSize > 7)
         {
+            // ── HAND SLIDE: slide up so player can select cards to discard ──
+            cp.hand.SlideUp();
+
             int discardCount = handSize - 7;
             isDiscardPhase = true;
             Debug.Log($"[GameManager] {currentPlayer} has {handSize} cards — must discard {discardCount}.");
@@ -563,28 +620,54 @@ public class GameManager : MonoBehaviour
     }
 
     /// <summary>
-    /// Check if either player has reached สหัส (all 5 LIFE cards flipped face-up).
-    /// If so, the game is over — the other player wins.
-    /// Returns true if game over.
+    /// Check if either player has reached สาหัส (all 5 LIFE cards flipped face-up).
+    /// สาหัส does NOT end the game — the opponent must land one more
+    /// direct hit on the life zone to win.
+    /// Returns true if any player just entered สาหัส (for UI notification).
     /// </summary>
     public bool CheckWinCondition()
     {
+        if (isGameOver) return true;
+
+        // ── DECK-OUT: deck = 0 → immediate loss ──
+        if (player1.deck != null && player1.deck.CardsRemaining == 0)
+        {
+            Debug.Log("[GameManager] Player 1 deck is empty — DECK-OUT LOSS!");
+            DeclareLoser(TurnPlayer.Player1, "deck is empty (deck-out)");
+            return true;
+        }
+        if (player2.deck != null && player2.deck.CardsRemaining == 0)
+        {
+            Debug.Log("[GameManager] Player 2 deck is empty — DECK-OUT LOSS!");
+            DeclareLoser(TurnPlayer.Player2, "deck is empty (deck-out)");
+            return true;
+        }
+
+        // สาหัส = all 5 LIFE flipped. Game does NOT end immediately.
+        // The opponent must land one more direct hit on the life zone.
         if (player1.IsSahat)
         {
-            Debug.Log("[GameManager] Player 1 is สหัส (all LIFE flipped)! PLAYER 2 WINS!");
-            isGameOver = true;
-            UIController.instance.ShowGameOver("PLAYER 2 WINS!\nPlayer 1's LIFE is destroyed! (สหัส)");
-            return true;
+            Debug.Log("[GameManager] Player 1 is สาหัส (all LIFE flipped)! Opponent must direct hit to win.");
         }
-
         if (player2.IsSahat)
         {
-            Debug.Log("[GameManager] Player 2 is สหัส (all LIFE flipped)! PLAYER 1 WINS!");
-            isGameOver = true;
-            UIController.instance.ShowGameOver("PLAYER 1 WINS!\nPlayer 2's LIFE is destroyed! (สหัส)");
-            return true;
+            Debug.Log("[GameManager] Player 2 is สาหัส (all LIFE flipped)! Opponent must direct hit to win.");
         }
 
-        return false;
+        return false; // Game never ends from สาหัส alone
+    }
+
+    /// <summary>
+    /// End the game via direct hit on a สาหัส player's life zone.
+    /// Called by CombatController when an attacker hits the life zone
+    /// of a player who is already in สาหัส status.
+    /// </summary>
+    public void EndGameDirectHit(TurnPlayer loser)
+    {
+        isGameOver = true;
+        string loserName = loser == TurnPlayer.Player1 ? "Player 1" : "Player 2";
+        string winnerName = loser == TurnPlayer.Player1 ? "PLAYER 2" : "PLAYER 1";
+        Debug.Log($"[GameManager] {loserName} receives DIRECT HIT while สาหัส! {winnerName} WINS!");
+        UIController.instance.ShowGameOver($"{winnerName} WINS!\n{loserName} received a direct hit! (\u0E2A\u0E32\u0E2B\u0E31\u0E2A)");
     }
 }

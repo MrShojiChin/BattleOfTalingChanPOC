@@ -85,18 +85,42 @@ public class CardPlacePoint : MonoBehaviour
     }
 
     // ════════════════════════════════════════════════════════════════
-    //  CLICK HANDLER — Hell Zone opens viewer
+    //  DOUBLE-CLICK — Hell Zone opens viewer (New Input System)
     // ════════════════════════════════════════════════════════════════
 
-    private void OnMouseDown()
+    private float lastClickTime;
+    private const float DoubleClickThreshold = 0.5f;
+
+    private void Update()
     {
+        // Only hell zones need click detection
+        if (zoneType != ZoneType.Hell) return;
         if (GameManager.instance != null && GameManager.instance.isGameOver) return;
 
-        // Click Hell Zone → open viewer
-        if (zoneType == ZoneType.Hell && activeCards.Count > 0)
+        // Cards stacked on top handle their own double-click via Card.OnPointerDown.
+        // This Update() handles clicks on the empty hell zone collider itself.
+        if (UnityEngine.InputSystem.Mouse.current == null) return;
+        if (!UnityEngine.InputSystem.Mouse.current.leftButton.wasPressedThisFrame) return;
+
+        // RaycastAll — the desktop/board may be in front, so check ALL hits
+        Ray ray = Camera.main.ScreenPointToRay(UnityEngine.InputSystem.Mouse.current.position.ReadValue());
+        RaycastHit[] hits = Physics.RaycastAll(ray, 100f);
+        bool hitThisZone = false;
+        foreach (var h in hits)
         {
-            Player zoneOwner = GameManager.instance.GetPlayer(owner);
-            UIController.instance.ShowHellZoneViewer(zoneOwner);
+            if (h.collider.gameObject == gameObject) { hitThisZone = true; break; }
+        }
+
+        if (hitThisZone)
+        {
+            float timeSinceLastClick = Time.unscaledTime - lastClickTime;
+            lastClickTime = Time.unscaledTime;
+
+            if (timeSinceLastClick <= DoubleClickThreshold)
+            {
+                Player zoneOwner = GameManager.instance.GetPlayer(owner);
+                UIController.instance.ShowHellZoneViewer(zoneOwner);
+            }
         }
     }
 

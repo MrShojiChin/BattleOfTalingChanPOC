@@ -270,11 +270,16 @@ public static class MagicEffectResolver
     {
         GameManager gm = GameManager.instance;
 
-        // Mill N cards (send top of deck to Hell)
-        var milledCards = player.deck.MillCards(value);
-        Debug.Log($"[Magic] {cardName}: ธรณีสูบ! Sent {milledCards.Count} card(s) from deck to Hell.");
+        // Ability 4: ThonSoopAmplifier adds extra mill (draw stays at base)
+        int totalMill = value;
+        if (AvatarAbilityController.instance != null)
+            totalMill += AvatarAbilityController.GetThonSoopAmplification(player);
 
-        // Draw N cards
+        // Mill cards (send top of deck to Hell)
+        var milledCards = player.deck.MillCards(totalMill);
+        Debug.Log($"[Magic] {cardName}: ธรณีสูบ! Sent {milledCards.Count} card(s) from deck to Hell (base {value} + amplified).");
+
+        // Draw N cards (base value only — amplification doesn't increase draw)
         for (int i = 0; i < value; i++)
         {
             player.deck.DrawCardToHand();
@@ -282,9 +287,16 @@ public static class MagicEffectResolver
         }
         Debug.Log($"[Magic] {cardName}: Drew {value} card(s) after ธรณีสูบ.");
 
-        // Check if any milled cards can activate from Hell
+        // Check if any milled cards can activate from Hell (mods)
         if (MagicController.instance != null)
             MagicController.instance.CheckMilledForHellActivation(milledCards, player);
+
+        // Ability 3: Check milled cards for avatar Hell summon
+        if (AvatarAbilityController.instance != null)
+        {
+            AvatarAbilityController.instance.CheckMilledForAvatarHellSummon(milledCards, player);
+            AvatarAbilityController.instance.RecalculateAllHellPowerScaling();
+        }
     }
 
     /// <summary>
@@ -325,11 +337,16 @@ public static class MagicEffectResolver
 
         GameManager gm = GameManager.instance;
 
-        // Step 2: ธรณีสูบ — mill N cards from deck to Hell
-        var milledCards = player.deck.MillCards(value);
-        Debug.Log($"[Magic] {cardName}: ธรณีสูบ! Sent {milledCards.Count} card(s) from deck to Hell.");
+        // Ability 4: ThonSoopAmplifier adds extra mill
+        int totalMill = value;
+        if (AvatarAbilityController.instance != null)
+            totalMill += AvatarAbilityController.GetThonSoopAmplification(player);
 
-        // Step 3: Draw N cards
+        // Step 2: ธรณีสูบ — mill cards from deck to Hell
+        var milledCards = player.deck.MillCards(totalMill);
+        Debug.Log($"[Magic] {cardName}: ธรณีสูบ! Sent {milledCards.Count} card(s) from deck to Hell (base {value} + amplified).");
+
+        // Step 3: Draw N cards (base value only)
         for (int i = 0; i < value; i++)
         {
             player.deck.DrawCardToHand();
@@ -337,9 +354,16 @@ public static class MagicEffectResolver
         }
         Debug.Log($"[Magic] {cardName}: Drew {value} card(s) after ธรณีสูบ.");
 
-        // Step 4: Check if any milled cards can activate from Hell
+        // Step 4: Check if any milled cards can activate from Hell (mods)
         if (MagicController.instance != null)
             MagicController.instance.CheckMilledForHellActivation(milledCards, player);
+
+        // Ability 3: Check milled cards for avatar Hell summon
+        if (AvatarAbilityController.instance != null)
+        {
+            AvatarAbilityController.instance.CheckMilledForAvatarHellSummon(milledCards, player);
+            AvatarAbilityController.instance.RecalculateAllHellPowerScaling();
+        }
     }
 
     /// <summary>

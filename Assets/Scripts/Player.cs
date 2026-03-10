@@ -19,6 +19,13 @@ public class Player : MonoBehaviour
     public HandController hand;
     public DeckController deck;
 
+    // ── LIFE CARD EFFECT STATE ───────────────────────────────────
+    /// <summary>
+    /// Queued draws from LIFE card flips.
+    /// Each flipped LIFE card adds +1. Resolved at next Main Phase.
+    /// </summary>
+    [HideInInspector] public int pendingLifeDraws = 0;
+
     // ── BOARD ZONES — Single Card ──────────────────────────────────
     [Header("Board Zones — Avatar (4 slots)")]
     public CardPlacePoint[] avatarZones = new CardPlacePoint[4];
@@ -196,6 +203,51 @@ public class Player : MonoBehaviour
                 return zone;
         }
         return null;
+    }
+
+    // ════════════════════════════════════════════════════════════════
+    //  RUNTIME AVATAR ZONE SPACING
+    // ════════════════════════════════════════════════════════════════
+
+    /// <summary>
+    /// Reposition AVATAR zone GameObjects to use the specified spacing.
+    /// Calculates center from current positions and redistributes along X-axis.
+    /// </summary>
+    public void AdjustAvatarZoneSpacing(float spacing = 2.5f)
+    {
+        int validCount = 0;
+        Vector3 centerPos = Vector3.zero;
+        for (int i = 0; i < avatarZones.Length; i++)
+        {
+            if (avatarZones[i] != null)
+            {
+                centerPos += avatarZones[i].transform.position;
+                validCount++;
+            }
+        }
+
+        if (validCount == 0)
+        {
+            Debug.LogWarning($"[Player] {playerId}: No AVATAR zones found — cannot adjust spacing.");
+            return;
+        }
+
+        centerPos /= validCount;
+
+        // Redistribute: 4 zones centered around the midpoint along X-axis
+        float startX = centerPos.x - ((avatarZones.Length - 1) * spacing) / 2f;
+
+        for (int i = 0; i < avatarZones.Length; i++)
+        {
+            if (avatarZones[i] != null)
+            {
+                Vector3 pos = avatarZones[i].transform.position;
+                pos.x = startX + spacing * i;
+                avatarZones[i].transform.position = pos;
+            }
+        }
+
+        Debug.Log($"[Player] {playerId}: AVATAR zone spacing set to {spacing} (center X={centerPos.x:F2})");
     }
 
     // ════════════════════════════════════════════════════════════════

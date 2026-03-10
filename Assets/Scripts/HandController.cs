@@ -14,10 +14,63 @@ public class HandController : MonoBehaviour
     public Transform minPos, maxPos;
     public List<Vector3> cardPositions = new List<Vector3>();
 
+    // ── HAND SLIDE ──────────────────────────────────────────────────
+    [Header("Hand Slide")]
+    [Tooltip("How far to slide the hand off-screen (Z = toward camera, Y = height)")]
+    public Vector3 slideDownOffset = new Vector3(0f, -0.5f, -5f);
+
+    private bool _isSlid = false;
+
+    /// <summary>True when the hand is slid down (hidden).</summary>
+    public bool IsSlid => _isSlid;
+
     void Start()
     {
         SetCardPosistionsInHand();
     }
+
+    // ════════════════════════════════════════════════════════════════
+    //  SLIDE DOWN / UP
+    // ════════════════════════════════════════════════════════════════
+
+    /// <summary>
+    /// Slide the hand down (cards move off-screen / partially hidden).
+    /// Called when it's NOT this player's turn, or during ReadyToPlace.
+    /// </summary>
+    public void SlideDown()
+    {
+        if (_isSlid) return;
+        _isSlid = true;
+        SetCardPosistionsInHand();
+    }
+
+    /// <summary>
+    /// Slide the hand back up to normal visible position.
+    /// Called when it becomes this player's turn.
+    /// </summary>
+    public void SlideUp()
+    {
+        if (!_isSlid) return;
+        _isSlid = false;
+        SetCardPosistionsInHand();
+    }
+
+    /// <summary>
+    /// Returns the card position at index WITHOUT the slide offset.
+    /// Used for the pending avatar which should stay raised during ReadyToPlace.
+    /// </summary>
+    public Vector3 GetBasePosition(int index)
+    {
+        if (heldCards.Count <= 1)
+            return minPos.position;
+
+        Vector3 step = (maxPos.position - minPos.position) / (heldCards.Count - 1);
+        return minPos.position + (step * index);
+    }
+
+    // ════════════════════════════════════════════════════════════════
+    //  CARD POSITIONING
+    // ════════════════════════════════════════════════════════════════
 
     public void SetCardPosistionsInHand()
     {
@@ -35,6 +88,9 @@ public class HandController : MonoBehaviour
             distanceBetweenPoints = (maxPos.position - minPos.position) / (heldCards.Count - 1);
         }
 
+        // Apply slide offset when the hand is hidden
+        Vector3 offset = _isSlid ? slideDownOffset : Vector3.zero;
+
         for (int i = 0; i < heldCards.Count; i++)
         {
             if (heldCards[i] == null)
@@ -43,7 +99,7 @@ public class HandController : MonoBehaviour
                 continue;
             }
 
-            cardPositions.Add(minPos.position + (distanceBetweenPoints * i));
+            cardPositions.Add(minPos.position + (distanceBetweenPoints * i) + offset);
 
             heldCards[i].handPosition = i;
             heldCards[i].inHand = true;

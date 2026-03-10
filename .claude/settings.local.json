@@ -1,0 +1,28 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(git push:*)",
+      "Bash(grep -n \"characterArt:\" \"/d/UnityProject/My project/Assets/Prefab/\"*.prefab)",
+      "Bash(cd /d/UnityProject/\"My project\")",
+      "Bash(git status -u)",
+      "Bash(xargs grep -l \"enum.*Ability\\\\|enum.*Keyword\\\\|enum.*Effect\\\\|enum.*Skill\")",
+      "Bash(xargs grep -l \"CardPlacePoint\\\\|Zone\")",
+      "Bash(xargs grep -l \"isMultiCardZone\\\\|isPlayerAvatarPoint\\\\|isPlayerHellPoint\")",
+      "Bash(find . -name \"Battle.unity\" -exec cat {} ;)",
+      "Bash(grep -r \"class.*Card\" Assets/Scripts/*.cs)",
+      "Bash(grep -v \"//\")",
+      "Bash(grep \"class.*SO\" Assets/Scripts/*.cs)",
+      "Bash(grep -r \"prefab\\\\|Prefab\" /d/UnityProject/\"My project\"/Assets/Scripts/*.cs)",
+      "Bash(grep -n \"HandleHandCardClickForDiscard\" \"D:/UnityProject/My project/Assets/Scripts\"/*.cs)",
+      "Bash(grep -l \"Controller\\\\|Manager\" /d/UnityProject/\"My project\"/Assets/Scripts/*.cs)",
+      "Bash(xargs grep -l \"enum MagicEffect\")",
+      "Bash(python3 -c \":*)",
+      "Bash(py --version)",
+      "Bash(where python)",
+      "Bash(where py)",
+      "Bash(py -c \":*)"
+    ]
+  }
+}

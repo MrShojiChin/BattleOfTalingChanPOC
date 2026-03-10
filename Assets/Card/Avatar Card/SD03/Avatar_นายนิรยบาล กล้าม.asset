@@ -12,12 +12,22 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: e37000a82d2f04f478aab81b22beab21, type: 3}
   m_Name: "Avatar_\u0E19\u0E32\u0E22\u0E19\u0E34\u0E23\u0E22\u0E1A\u0E32\u0E25 \u0E01\u0E25\u0E49\u0E32\u0E21"
   m_EditorClassIdentifier: Assembly-CSharp::AvatarCardSO
-  cardName: 
+  cardName: "\u0E19\u0E32\u0E22\u0E19\u0E34\u0E23\u0E22\u0E1A\u0E32\u0E25 \u0E01\u0E25\u0E49\u0E32\u0E21"
   description: 
-  cardCharacterSprite: {fileID: 0}
-  gem: 0
-  cardSymbol: 0
+  cardCharacterSprite: {fileID: 21300000, guid: d38d466f66bdfca478de642b79d652dd, type: 3}
+  gem: 3
+  cardSymbol: 4
   avatarColor: 0
   gemColor: 0
-  cost: 0
-  power: 0
+  cost: 4
+  power: 4
+  abilities: 0
+  jutiSearchPrefix: 
+  combatThonSoopMill: 0
+  combatThonSoopPowerBoost: 0
+  hellScalingNamePrefix: 
+  jutiTargetPowerValue: 0
+  jutiDrawCount: 0
+  attackPowerBoost: 0
+  auraSymbol: 0
+  auraPowerBoost: 0

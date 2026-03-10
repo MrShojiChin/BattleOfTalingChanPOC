@@ -12,12 +12,23 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: e37000a82d2f04f478aab81b22beab21, type: 3}
   m_Name: "Avatar_\u0E19\u0E19\u0E17\u0E01"
   m_EditorClassIdentifier: Assembly-CSharp::AvatarCardSO
-  cardName: 
-  description: 
+  cardName: "\u0E19\u0E19\u0E17\u0E01"
+  description: "\u0E40\u0E21\u0E37\u0E48\u0E2D Avatar \u0E15\u0E31\u0E27\u0E19\u0E35\u0E49\u0E2D\u0E22\u0E39\u0E48\u0E1A\u0E19\u0E2A\u0E19\u0E32\u0E21
+    POWER +1 \u0E43\u0E2B\u0E49 Avatar [\u0E40\u0E17\u0E1E] \u0E17\u0E38\u0E01\u0E43\u0E1A\u0E1A\u0E19\u0E2A\u0E19\u0E32\u0E21\u0E1D\u0E48\u0E32\u0E22\u0E40\u0E23\u0E32"
   cardCharacterSprite: {fileID: 21300000, guid: 15428da2221be2e4f84b004d5bb6b880, type: 3}
   gem: 2
-  symbol: 
+  cardSymbol: 1
   avatarColor: 0
   gemColor: 0
   cost: 1
   power: 1
+  abilities: 512
+  jutiSearchPrefix: 
+  combatThonSoopMill: 0
+  combatThonSoopPowerBoost: 0
+  hellScalingNamePrefix: 
+  jutiTargetPowerValue: 0
+  jutiDrawCount: 0
+  attackPowerBoost: 0
+  auraSymbol: 2
+  auraPowerBoost: 1

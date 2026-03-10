@@ -12,13 +12,16 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: d5514c5f6f6b6114d955facb76efd089, type: 3}
   m_Name: "Magic_\u0E2E\u0E48\u0E32 \u0E2E\u0E48\u0E32 \u0E1C\u0E21\u0E44\u0E14\u0E49\u0E40\u0E25\u0E37\u0E48\u0E2D\u0E19\u0E02\u0E31\u0E49\u0E19"
   m_EditorClassIdentifier: Assembly-CSharp::MagicCardSO
-  cardName: 
-  description: 
-  cardCharacterSprite: {fileID: 0}
-  gem: 0
-  cardSymbol: 0
+  cardName: "\u0E2E\u0E48\u0E32 \u0E2E\u0E48\u0E32 \u0E1C\u0E21\u0E44\u0E14\u0E49\u0E40\u0E25\u0E37\u0E48\u0E2D\u0E19\u0E02\u0E31\u0E49\u0E19"
+  description: "\u0E40\u0E25\u0E37\u0E2D\u0E01 Avatar [\u0E40\u0E17\u0E1E] 1 \u0E43\u0E1A
+    POWER +2 \u0E08\u0E19\u0E08\u0E1A\u0E40\u0E17\u0E34\u0E23\u0E4C\u0E19"
+  cardCharacterSprite: {fileID: 21300000, guid: 5b0707201e40dab48904f5e332932781, type: 3}
+  gem: 2
+  cardSymbol: 6
   gemColor: 0
   magicType: 0
-  effect: 0
-  effectValue: 0
-  targetSymbol: 0
+  effect: 12
+  effectValue: 2
+  targetSymbol: 2
+  searchName: 
+  activateFromHellOnThonSoop: 0

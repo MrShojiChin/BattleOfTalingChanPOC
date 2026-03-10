@@ -23,6 +23,7 @@ public class Card : MonoBehaviour, IPointerEnterHandler, IPointerExitHandler, IP
     public CardSymbol cardSymbol;
     public string description;
     public string cardName;
+    public string flavorText;      // LIFE card flavor text (Thai narrative)
     public CardColor avatarColor;
     public CardColor gemColor;
 
@@ -37,6 +38,23 @@ public class Card : MonoBehaviour, IPointerEnterHandler, IPointerExitHandler, IP
     public Card equippedTo;                              // Avatar this mod is attached to
     [HideInInspector] public int appliedEffectValue;     // For undoing buffs when mod destroyed
     [HideInInspector] public bool cannotBeTribute;       // Searched cards can't be used as summon cost
+
+    // ── AVATAR ABILITY STATE ─────────────────────────────────────────
+    [Header("Avatar Abilities")]
+    public AvatarAbility abilities = AvatarAbility.None;
+    [HideInInspector] public string jutiSearchPrefix;
+    [HideInInspector] public int combatThonSoopMill;
+    [HideInInspector] public int combatThonSoopPowerBoost;
+    [HideInInspector] public string hellScalingNamePrefix;
+    [HideInInspector] public int basePower;              // Original SO power (before dynamic modifiers)
+    [HideInInspector] public int hellScalingBonus = 0;   // Current HellPowerScaling bonus (tracked for recalculation)
+    [HideInInspector] public int jutiTargetPowerValue;   // For JutiTargetDebuff/Buff: power change (negative for debuff)
+    [HideInInspector] public int jutiDrawCount;          // For JutiDraw: number of cards to draw
+    [HideInInspector] public int attackPowerBoost;       // For AttackPowerBoost: temp boost on attack
+    [HideInInspector] public CardSymbol auraSymbol;      // For SymbolAura: symbol to buff
+    [HideInInspector] public int auraPowerBoost;         // For SymbolAura: power per matching ally
+    [HideInInspector] public int auraBonus = 0;          // Current aura bonus (tracked for recalculation)
+    [HideInInspector] public bool isAnimating;            // True during scripted animations (blocks normal lerp)
 
     // ── LIFE CARD STATE ─────────────────────────────────────────
     [Header("Life Card")]
@@ -58,10 +76,12 @@ public class Card : MonoBehaviour, IPointerEnterHandler, IPointerExitHandler, IP
     public Image pitchHighlightImage;           // Border/glow for "pending" state (yellow)
     public Image readyHighlightImage;           // Border/glow for "ready to place" state (green)
     public Image attackHighlightImage;          // Border/glow for "selected attacker" (red)
-    private Color normalColor = Color.white;
-    private Color pitchColor = Color.yellow;
-    private Color readyColor = Color.green;
-    private Color attackColor = Color.red;
+    public Image deathGlowImage;               // Glow for death animation (before going to hell)
+    public Image modHighlightImage;             // Gradient glow for "has modification attached" (color matches mod)
+    private Color normalColor = new Color(1f, 1f, 1f, 0f);  // Transparent (invisible when off)
+    private Color pitchColor = new Color(1f, 1f, 0f, 0.6f);  // Yellow glow
+    private Color readyColor = new Color(0f, 1f, 0f, 0.6f);  // Green glow
+    private Color attackColor = new Color(1f, 0f, 0f, 0.6f);  // Red glow
 
     // ── OWNERSHIP ─────────────────────────────────────────────────
     /// <summary>
@@ -85,6 +105,7 @@ public class Card : MonoBehaviour, IPointerEnterHandler, IPointerExitHandler, IP
     public bool isSelected;
 
     private Image cardImage;
+    private static float _lastHellClickTime;  // Static: shared across all cards in hell
 
     public LayerMask whatIsDesktop, whatIsPlacement;
     private bool justPressed;
@@ -157,6 +178,17 @@ public class Card : MonoBehaviour, IPointerEnterHandler, IPointerExitHandler, IP
             cardSymbol = avatarSO.cardSymbol;
             avatarColor = avatarSO.avatarColor;
             gemColor = avatarSO.gemColor;
+            abilities = avatarSO.abilities;
+            jutiSearchPrefix = avatarSO.jutiSearchPrefix;
+            combatThonSoopMill = avatarSO.combatThonSoopMill;
+            combatThonSoopPowerBoost = avatarSO.combatThonSoopPowerBoost;
+            hellScalingNamePrefix = avatarSO.hellScalingNamePrefix;
+            basePower = avatarSO.power;
+            jutiTargetPowerValue = avatarSO.jutiTargetPowerValue;
+            jutiDrawCount = avatarSO.jutiDrawCount;
+            attackPowerBoost = avatarSO.attackPowerBoost;
+            auraSymbol = avatarSO.auraSymbol;
+            auraPowerBoost = avatarSO.auraPowerBoost;
             if (characterArt) characterArt.sprite = avatarSO.cardCharacterSprite;
         }
         // ── MAGIC ──
@@ -176,6 +208,7 @@ public class Card : MonoBehaviour, IPointerEnterHandler, IPointerExitHandler, IP
         {
             cardName = lifeCardSO.cardName;
             description = lifeCardSO.description;
+            flavorText = lifeCardSO.flavorText;
             cost = 0;
             power = 0;
             gem = lifeCardSO.gem;
@@ -199,6 +232,9 @@ public class Card : MonoBehaviour, IPointerEnterHandler, IPointerExitHandler, IP
             costText.text = cost.ToString();
             costText.gameObject.SetActive(cardType == CardType.Avatar);  // Only Avatars show cost
         }
+
+        // Set power display from SO default value (visible in hand + on board for avatars)
+        RefreshPowerDisplay();
     }
 
     // ════════════════════════════════════════════════════════════════
@@ -213,9 +249,10 @@ public class Card : MonoBehaviour, IPointerEnterHandler, IPointerExitHandler, IP
         BattleController bc = BattleController.instance;
         if (bc != null && bc.pendingAvatar == this && !isSelected)
         {
-            if (theHC != null && handPosition < theHC.cardPositions.Count)
+            if (theHC != null && handPosition < theHC.heldCards.Count)
             {
-                targetPoint = theHC.cardPositions[handPosition] + new Vector3(0f, 1.5f, 0.5f);
+                // Use base position (without slide offset) so pending avatar stays raised
+                targetPoint = theHC.GetBasePosition(handPosition) + new Vector3(0f, 1.5f, 0.5f);
                 targerRot = Quaternion.identity;
             }
             transform.position = Vector3.Lerp(transform.position, targetPoint, moveSpeed * Time.deltaTime);
@@ -262,8 +299,11 @@ public class Card : MonoBehaviour, IPointerEnterHandler, IPointerExitHandler, IP
 
         justPressed = false;
 
-        transform.position = Vector3.Lerp(transform.position, targetPoint, moveSpeed * Time.deltaTime);
-        transform.rotation = Quaternion.RotateTowards(transform.rotation, targerRot, rotateSpeed * Time.deltaTime);
+        if (!isAnimating)
+        {
+            transform.position = Vector3.Lerp(transform.position, targetPoint, moveSpeed * Time.deltaTime);
+            transform.rotation = Quaternion.RotateTowards(transform.rotation, targerRot, rotateSpeed * Time.deltaTime);
+        }
     }
 
     // ════════════════════════════════════════════════════════════════
@@ -280,25 +320,7 @@ public class Card : MonoBehaviour, IPointerEnterHandler, IPointerExitHandler, IP
 
         BattleController bc = BattleController.instance;
 
-        // ── CASE A: Dropping a tribute card onto the Hell Point during CostStep ──
-        if (bc.currentState == SummonState.CostStep && point.isPlayerHellPoint && this != bc.pendingAvatar)
-        {
-            if (bc.TryPayTribute(this, point))
-            {
-                isSelected = false;
-                EnableInteraction();
-                targerRot = Quaternion.identity;
-                Debug.Log($"{cardName} tributed successfully.");
-            }
-            else
-            {
-                Debug.Log($"{cardName} rejected as tribute, returning to hand.");
-                ReturnToHand();
-            }
-            return;
-        }
-
-        // ── CASE B: Placing the unlocked avatar on a board slot (ReadyToPlace) ──
+        // ── CASE A: Placing the unlocked avatar on a board slot (ReadyToPlace) ──
         if (bc.currentState == SummonState.ReadyToPlace && this == bc.pendingAvatar)
         {
             if (point.activeCard == null && point.isPlayerAvatarPoint)
@@ -323,7 +345,11 @@ public class Card : MonoBehaviour, IPointerEnterHandler, IPointerExitHandler, IP
             inHand = false;
             EnableInteraction();
             HandController theHC = OwnerHand;
-            if (theHC != null) theHC.RemoveCardFromHand(this);
+            if (theHC != null)
+            {
+                theHC.RemoveCardFromHand(this);
+                theHC.SlideUp();  // Card placed — slide hand back up
+            }
             MagicController.instance.PlayMagicCard(this, point);
             UIController.instance?.UpdateGameInfo();
             return;
@@ -334,9 +360,20 @@ public class Card : MonoBehaviour, IPointerEnterHandler, IPointerExitHandler, IP
         {
             if (cardType == CardType.Avatar && point.isPlayerAvatarPoint && point.IsCurrentPlayerZone())
             {
+                // Ability 3: Block free placement of avatars that cannot be summoned from hand
+                if (HasAbility(AvatarAbility.CannotSummonFromHand))
+                {
+                    Debug.Log($"{cardName} cannot be summoned from hand (ability)!");
+                    ReturnToHand();
+                    return;
+                }
                 PlaceOnBoard(point);
                 HandController theHC = OwnerHand;
-                if (theHC != null) theHC.RemoveCardFromHand(this);
+                if (theHC != null)
+                {
+                    theHC.RemoveCardFromHand(this);
+                    theHC.SlideUp();  // Card placed — slide hand back up
+                }
                 UIController.instance?.UpdateGameInfo();
                 return;
             }
@@ -355,6 +392,58 @@ public class Card : MonoBehaviour, IPointerEnterHandler, IPointerExitHandler, IP
         // During setup, mulligan handles all card positioning
         if (GameManager.instance != null && GameManager.instance.isSetupPhase) return;
 
+        // During discard-for-effect selection: block all hover except highlighted cards
+        if (MagicController.instance != null
+            && MagicController.instance.magicState == MagicPlayState.SelectingDiscardForEffect)
+        {
+            // Only highlighted (matching symbol) hand cards get extra hover
+            if (inHand && MagicController.instance.IsHighlightedForDiscard(this))
+            {
+                HandController hc = OwnerHand;
+                if (hc != null && handPosition < hc.cardPositions.Count)
+                {
+                    Vector3 pos = hc.cardPositions[handPosition] + new Vector3(0f, 2.2f, 0.7f);
+                    MoveToPoint(pos, Quaternion.identity);
+                }
+            }
+            return; // Block hover on magic card, non-matching hand cards, board cards
+        }
+
+        // During temp boost target selection: extra hover on highlighted avatars only
+        if (MagicController.instance != null
+            && MagicController.instance.magicState == MagicPlayState.SelectingTempBoostTarget)
+        {
+            if (!inHand && cardType == CardType.Avatar
+                && MagicController.instance.IsHighlightedForTempBoost(this))
+            {
+                if (assignedPlace != null)
+                {
+                    Vector3 pos = assignedPlace.transform.position + new Vector3(0f, 0.6f, 0f);
+                    Quaternion rot = isTapped
+                        ? Quaternion.Euler(0f, -90f, 0f)
+                        : Quaternion.identity;
+                    MoveToPoint(pos, rot);
+                }
+            }
+            return; // Block hover on everything else
+        }
+
+        // During react discard selection: extra hover on highlighted cards only
+        if (MagicController.instance != null
+            && MagicController.instance.magicState == MagicPlayState.SelectingReactDiscard)
+        {
+            if (inHand && MagicController.instance.IsHighlightedForReactDiscard(this))
+            {
+                HandController hc = OwnerHand;
+                if (hc != null && handPosition < hc.cardPositions.Count)
+                {
+                    Vector3 pos = hc.cardPositions[handPosition] + new Vector3(0f, 2.2f, 0.7f);
+                    MoveToPoint(pos, Quaternion.identity);
+                }
+            }
+            return; // Block hover on everything else
+        }
+
         BattleController bc = BattleController.instance;
         HandController theHC = OwnerHand;
 
@@ -363,6 +452,9 @@ public class Card : MonoBehaviour, IPointerEnterHandler, IPointerExitHandler, IP
         if ((bc.currentState == SummonState.CostStep || bc.currentState == SummonState.ReadyToPlace)
             && inHand && !isSelected)
         {
+            // Don't hover-raise cards already selected as tributes (they're already up)
+            if (bc.currentTributes.Contains(this)) return;
+
             if (theHC != null && handPosition < theHC.cardPositions.Count)
                 MoveToPoint(theHC.cardPositions[handPosition] + new Vector3(0f, 1f, 0.5f), Quaternion.identity);
             return;
@@ -380,6 +472,57 @@ public class Card : MonoBehaviour, IPointerEnterHandler, IPointerExitHandler, IP
         // During setup, mulligan handles all card positioning
         if (GameManager.instance != null && GameManager.instance.isSetupPhase) return;
 
+        // During discard-for-effect selection: return highlighted cards to raised position
+        if (MagicController.instance != null
+            && MagicController.instance.magicState == MagicPlayState.SelectingDiscardForEffect)
+        {
+            if (inHand && MagicController.instance.IsHighlightedForDiscard(this))
+            {
+                HandController hc = OwnerHand;
+                if (hc != null && handPosition < hc.cardPositions.Count)
+                {
+                    Vector3 pos = hc.cardPositions[handPosition] + new Vector3(0f, 1.5f, 0.5f);
+                    MoveToPoint(pos, hc.minPos.rotation);
+                }
+            }
+            return; // Block exit hover on everything else too
+        }
+
+        // During temp boost selection: return highlighted avatars to raised position
+        if (MagicController.instance != null
+            && MagicController.instance.magicState == MagicPlayState.SelectingTempBoostTarget)
+        {
+            if (!inHand && cardType == CardType.Avatar
+                && MagicController.instance.IsHighlightedForTempBoost(this))
+            {
+                if (assignedPlace != null)
+                {
+                    Vector3 pos = assignedPlace.transform.position + new Vector3(0f, 0.3f, 0f);
+                    Quaternion rot = isTapped
+                        ? Quaternion.Euler(0f, -90f, 0f)
+                        : Quaternion.identity;
+                    MoveToPoint(pos, rot);
+                }
+            }
+            return; // Block exit hover on everything else
+        }
+
+        // During react discard selection: return highlighted cards to raised position
+        if (MagicController.instance != null
+            && MagicController.instance.magicState == MagicPlayState.SelectingReactDiscard)
+        {
+            if (inHand && MagicController.instance.IsHighlightedForReactDiscard(this))
+            {
+                HandController hc = OwnerHand;
+                if (hc != null && handPosition < hc.cardPositions.Count)
+                {
+                    Vector3 pos = hc.cardPositions[handPosition] + new Vector3(0f, 1.5f, 0.5f);
+                    MoveToPoint(pos, hc.minPos.rotation);
+                }
+            }
+            return; // Block exit hover on everything else
+        }
+
         BattleController bc = BattleController.instance;
         HandController theHC = OwnerHand;
 
@@ -388,6 +531,9 @@ public class Card : MonoBehaviour, IPointerEnterHandler, IPointerExitHandler, IP
         if ((bc.currentState == SummonState.CostStep || bc.currentState == SummonState.ReadyToPlace)
             && inHand && !isSelected)
         {
+            // Don't move selected tributes back down on hover exit
+            if (bc.currentTributes.Contains(this)) return;
+
             if (theHC != null && handPosition < theHC.cardPositions.Count)
                 MoveToPoint(theHC.cardPositions[handPosition], theHC.minPos.rotation);
             return;
@@ -409,6 +555,23 @@ public class Card : MonoBehaviour, IPointerEnterHandler, IPointerExitHandler, IP
         // Dismiss card preview on any left-click
         if (isLeftClick)
             UIController.instance?.HideCardPreview();
+
+        // ── HELL ZONE: double-click card in hell → open hell viewer ──
+        if (assignedPlace != null && assignedPlace.isPlayerHellPoint)
+        {
+            if (isLeftClick)
+            {
+                float timeSinceLastClick = Time.unscaledTime - _lastHellClickTime;
+                _lastHellClickTime = Time.unscaledTime;
+
+                if (timeSinceLastClick <= 0.5f)
+                {
+                    Player zoneOwner = GameManager.instance.GetPlayer(cardOwner);
+                    UIController.instance?.ShowHellZoneViewer(zoneOwner);
+                }
+            }
+            return; // Cards in hell have no other interactions
+        }
 
         // ── GAME OVER: block all interaction ──
         if (GameManager.instance != null && GameManager.instance.isGameOver) return;
@@ -439,12 +602,38 @@ public class Card : MonoBehaviour, IPointerEnterHandler, IPointerExitHandler, IP
             return; // No other interactions during setup
         }
 
+        // ── JUTI TARGET SELECTION: route clicks to AvatarAbilityController ──
+        if (AvatarAbilityController.instance != null
+            && AvatarAbilityController.instance.IsSelectingJutiTarget)
+        {
+            if (isLeftClick && !inHand && cardType == CardType.Avatar)
+                AvatarAbilityController.instance.HandleAvatarClickForJuti(this);
+            else if (isRightClick)
+                AvatarAbilityController.instance.CancelJutiSelection();
+            return; // Block all other interaction during Juti target selection
+        }
+
         // ── REACT / HELL ACTIVATION: block all card interaction while waiting ──
         if (MagicController.instance != null
             && (MagicController.instance.magicState == MagicPlayState.AwaitingReactConfirm
              || MagicController.instance.magicState == MagicPlayState.AwaitingHellActivation))
         {
             return; // Block all interaction — owner must click Activate or Keep
+        }
+
+        // ── REACT DISCARD SELECTION: player picks which hand card to discard for React ──
+        if (MagicController.instance != null
+            && MagicController.instance.magicState == MagicPlayState.SelectingReactDiscard)
+        {
+            if (isLeftClick && inHand)
+            {
+                MagicController.instance.HandleHandCardClickForReactDiscard(this);
+            }
+            else if (isRightClick)
+            {
+                MagicController.instance.CancelReactDiscardSelection();
+            }
+            return; // Block all other interaction during react discard selection
         }
 
         // ── MODIFICATION TARGET SELECTION: route clicks to MagicController ──
@@ -461,6 +650,37 @@ public class Card : MonoBehaviour, IPointerEnterHandler, IPointerExitHandler, IP
                 MagicController.instance.CancelModSelection();
             }
             return; // Block all other interaction during mod selection
+        }
+
+        // ── TEMP BOOST TARGET SELECTION: player picks which avatar to boost ──
+        if (MagicController.instance != null
+            && MagicController.instance.magicState == MagicPlayState.SelectingTempBoostTarget)
+        {
+            if (isLeftClick && !inHand && cardType == CardType.Avatar
+                && cardOwner == GameManager.instance.currentPlayer)
+            {
+                MagicController.instance.HandleAvatarClickForTempBoost(this);
+            }
+            else if (isRightClick)
+            {
+                MagicController.instance.CancelTempBoostSelection();
+            }
+            return; // Block all other interaction during temp boost selection
+        }
+
+        // ── DISCARD-FOR-EFFECT SELECTION: player picks which hand card to discard ──
+        if (MagicController.instance != null
+            && MagicController.instance.magicState == MagicPlayState.SelectingDiscardForEffect)
+        {
+            if (isLeftClick && inHand && cardOwner == GameManager.instance.currentPlayer)
+            {
+                MagicController.instance.HandleHandCardClickForDiscard(this);
+            }
+            else if (isRightClick)
+            {
+                MagicController.instance.CancelDiscardForEffect();
+            }
+            return; // Block all other interaction during discard selection
         }
 
         // ── LIFE CARDS: never draggable, only clickable in Battle Phase ──
@@ -537,25 +757,43 @@ public class Card : MonoBehaviour, IPointerEnterHandler, IPointerExitHandler, IP
             return;
         }
 
+        // ── READY TO PLACE: drag avatar to board, or right-click to cancel ──
         if (bc.currentState == SummonState.ReadyToPlace && this == bc.pendingAvatar && inHand)
         {
-            isSelected = true;
-            DisableInteraction();
-            justPressed = true;
-            Debug.Log($"[Phase 3] Dragging unlocked avatar {cardName} to board.");
-            return;
-        }
-
-        if (bc.currentState == SummonState.CostStep)
-        {
-            if (this == bc.pendingAvatar) return;
-
-            if (inHand)
+            if (isLeftClick)
             {
                 isSelected = true;
                 DisableInteraction();
                 justPressed = true;
-                Debug.Log($"[Phase 2] Dragging {cardName} to Hell Point as tribute.");
+                Debug.Log($"[Phase 3] Dragging unlocked avatar {cardName} to board.");
+            }
+            else if (isRightClick)
+            {
+                bc.CancelFullSummon();
+            }
+            return;
+        }
+
+        // ── COST STEP / READY TO PLACE: click to select/deselect tribute cards ──
+        if (bc.currentState == SummonState.CostStep || bc.currentState == SummonState.ReadyToPlace)
+        {
+            if (this == bc.pendingAvatar)
+            {
+                if (isRightClick) bc.CancelFullSummon();
+                return;
+            }
+
+            if (inHand)
+            {
+                if (isLeftClick)
+                {
+                    bc.ToggleTribute(this);
+                }
+                else if (isRightClick)
+                {
+                    if (bc.currentTributes.Contains(this))
+                        bc.ReturnTribute(this);
+                }
             }
             return;
         }
@@ -564,19 +802,33 @@ public class Card : MonoBehaviour, IPointerEnterHandler, IPointerExitHandler, IP
         {
             if (cardType == CardType.Avatar)
             {
+                // Ability 3: Prevent summoning avatars that cannot be summoned from hand
+                if (HasAbility(AvatarAbility.CannotSummonFromHand))
+                {
+                    Debug.Log($"[Card] {cardName}: Cannot be summoned from hand (ability)!");
+                    return;
+                }
                 bool summonInitiated = bc.InitiateSummon(this);
                 if (!summonInitiated)
                 {
+                    // Free avatar (cost 0) — drag directly, slide hand down
                     isSelected = true;
                     DisableInteraction();
                     justPressed = true;
+                    HandController theHC = OwnerHand;
+                    if (theHC != null) theHC.SlideDown();
                 }
                 return;
             }
 
+            // Magic card — drag directly, slide hand down
             isSelected = true;
             DisableInteraction();
             justPressed = true;
+            {
+                HandController theHC = OwnerHand;
+                if (theHC != null) theHC.SlideDown();
+            }
         }
     }
 
@@ -605,26 +857,43 @@ public class Card : MonoBehaviour, IPointerEnterHandler, IPointerExitHandler, IP
         // Trigger React magic and Land buffs for newly summoned avatars
         if (cardType == CardType.Avatar && MagicController.instance != null)
             MagicController.instance.OnAvatarSummoned(this);
+
+        // Recalculate SymbolAura buffs (new avatar on field may gain or provide aura)
+        if (cardType == CardType.Avatar && AvatarAbilityController.instance != null)
+            AvatarAbilityController.instance.RecalculateAllAuraBuffs();
     }
 
     /// <summary>
     /// Update the power text display (visible on board for avatars).
     /// Call after any power modification (magic effects, buffs, etc.)
     /// </summary>
+
     public void RefreshPowerDisplay()
     {
         if (powerText != null)
         {
-            if (cardType == CardType.Avatar && !inHand)
+            if (cardType == CardType.Avatar)
             {
                 powerText.gameObject.SetActive(true);
-                powerText.text = power.ToString();
+
+                if (power > basePower)
+                    powerText.text = $"<color=#79B445>{power}</color>";
+                else if (power < basePower)
+                    powerText.text = $"<color=#D44400>{power}</color>";
+                else
+                    powerText.text = power.ToString();
             }
             else
             {
                 powerText.gameObject.SetActive(false);
             }
         }
+    }
+
+    /// <summary>Check if this avatar has a specific ability flag.</summary>
+    public bool HasAbility(AvatarAbility ability)
+    {
+        return (abilities & ability) != 0;
     }
 
     public void MoveToPoint(Vector3 pointToMoveTo, Quaternion rotToMatch)
@@ -650,6 +919,60 @@ public class Card : MonoBehaviour, IPointerEnterHandler, IPointerExitHandler, IP
     {
         if (attackHighlightImage != null)
             attackHighlightImage.color = on ? attackColor : normalColor;
+    }
+
+    /// <summary>
+    /// Fade the death glow on or off. Pass a color (e.g. red) and alpha 0→1.
+    /// Call with alpha=0 to turn off.
+    /// </summary>
+    public void SetDeathGlow(Color glowColor, float alpha)
+    {
+        if (deathGlowImage != null)
+        {
+            glowColor.a = alpha;
+            deathGlowImage.color = glowColor;
+        }
+    }
+
+    /// <summary>
+    /// Show or hide the modification highlight glow on this avatar.
+    /// Color is derived from the mod card's gemColor (Red/Blue/Yellow).
+    /// Call with on=false to clear the highlight.
+    /// </summary>
+    private static readonly Color modHighlightColor = new Color(0f, 0.898f, 0.145f, 1f); // #00E525
+
+    public void SetModHighlight(bool on, CardColor modColor = CardColor.Neutral)
+    {
+        if (modHighlightImage == null) return;
+        modHighlightImage.color = on ? modHighlightColor : normalColor;
+    }
+
+    /// <summary>
+    /// Refresh the mod highlight based on currently attached mods.
+    /// Uses the first attached mod's gemColor. Clears if no mods.
+    /// </summary>
+    public void RefreshModHighlight()
+    {
+        if (modHighlightImage == null) return;
+        if (attachedMods.Count == 0)
+        {
+            modHighlightImage.color = normalColor;
+            return;
+        }
+        // Fixed green highlight (#00E525) when any mod is attached
+        SetModHighlight(true);
+    }
+
+    /// <summary>Map CardColor enum to a Unity Color.</summary>
+    public static Color GetColorFromCardColor(CardColor cc)
+    {
+        switch (cc)
+        {
+            case CardColor.Red:     return new Color(1f, 0.2f, 0.2f);
+            case CardColor.Blue:    return new Color(0.2f, 0.5f, 1f);
+            case CardColor.Yellow:  return new Color(1f, 0.9f, 0.2f);
+            default:                return new Color(1f, 1f, 1f);  // Neutral = white
+        }
     }
 
     // ── MULLIGAN TOGGLE ─────────────────────────────────────────
@@ -738,9 +1061,11 @@ public class Card : MonoBehaviour, IPointerEnterHandler, IPointerExitHandler, IP
         EnableInteraction();
 
         HandController theHC = OwnerHand;
-        if (theHC != null && handPosition < theHC.cardPositions.Count)
+        if (theHC != null)
         {
-            MoveToPoint(theHC.cardPositions[handPosition], theHC.minPos.rotation);
+            theHC.SlideUp();  // Drag cancelled — slide hand back up
+            if (handPosition < theHC.cardPositions.Count)
+                MoveToPoint(theHC.cardPositions[handPosition], theHC.minPos.rotation);
         }
     }
 
@@ -756,11 +1081,12 @@ public class Card : MonoBehaviour, IPointerEnterHandler, IPointerExitHandler, IP
         isFaceDown = faceDown;
 
         // Rotate the whole card to show back (face-down) or front (face-up).
-        // LIFE cards are horizontal (-90° Y). Face-down adds 180° X flip.
+        // LIFE cards are horizontal (-90° Y). Face-down adds 180° Z flip.
+        // Using Z-axis (not X) avoids gimbal lock and gives a clean 180° visual flip.
         if (isLifeCard && assignedPlace != null)
         {
             Quaternion rot = faceDown
-                ? Quaternion.Euler(180f, -90f, 0f)   // Horizontal + flipped (card back up)
+                ? Quaternion.Euler(0f, -90f, 180f)   // Horizontal + Z-flipped (card back up)
                 : Quaternion.Euler(0f, -90f, 0f);     // Horizontal + normal (card front up)
             MoveToPoint(assignedPlace.transform.position, rot);
         }

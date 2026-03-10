@@ -12,13 +12,15 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: d5514c5f6f6b6114d955facb76efd089, type: 3}
   m_Name: "Magic_\u0E2A\u0E34\u0E21\u0E1E\u0E25\u0E35\u0E19\u0E23\u0E01"
   m_EditorClassIdentifier: Assembly-CSharp::MagicCardSO
-  cardName: 
-  description: 
-  cardCharacterSprite: {fileID: 0}
-  gem: 0
+  cardName: "\u0E2A\u0E34\u0E21\u0E1E\u0E25\u0E35\u0E19\u0E23\u0E01"
+  description: "POWER +1 \u0E43\u0E2B\u0E49 Avatar [\u0E19\u0E23\u0E01] \u0E17\u0E38\u0E01\u0E43\u0E1A\u0E1A\u0E19\u0E2A\u0E19\u0E32\u0E21"
+  cardCharacterSprite: {fileID: 21300000, guid: 6ea15a4cc7a0bbc4cbee6bfdbd7bfd8d, type: 3}
+  gem: 2
   cardSymbol: 0
   gemColor: 0
-  magicType: 0
-  effect: 0
-  effectValue: 0
-  targetSymbol: 0
+  magicType: 3
+  effect: 7
+  effectValue: 1
+  targetSymbol: 4
+  searchName: 
+  activateFromHellOnThonSoop: 0
