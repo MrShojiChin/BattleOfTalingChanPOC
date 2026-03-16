@@ -1,4 +1,5 @@
 using System.Collections;
+using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.InputSystem;
 
@@ -156,23 +157,18 @@ public class CombatController : MonoBehaviour
         {
             if (op.IsSahat)
             {
-                // สาหัส! Allow direct hit on life zone
+                // สาหัส! Allow direct hit on life zone — important, keep this message
                 UIController.instance.ShowCombatUI(
                     "<color=#FF0000><b>\u0E2A\u0E32\u0E2B\u0E31\u0E2A!</b></color> Enemy's LIFE is exposed!\nSelect an Avatar to deliver the finishing blow!");
                 Debug.Log("[Combat] Opponent is สาหัส — direct hit available!");
             }
             else
             {
-                UIController.instance.ShowCombatUI("No enemy targets available!\nPress End Phase \u2192 to continue.");
                 combatState = CombatState.Idle;
                 Debug.Log("[Combat] No enemy avatars or LIFE cards — Battle Phase has nothing to do.");
                 return;
             }
         }
-        else if (op.AvatarsOnField > 0)
-            UIController.instance.ShowCombatUI("Select an Avatar to attack with.");
-        else
-            UIController.instance.ShowCombatUI("No enemy Avatars — you can attack LIFE cards!\nSelect an Avatar to attack with.");
     }
 
     /// <summary>Called when GameManager leaves Battle Phase.</summary>
@@ -226,11 +222,6 @@ public class CombatController : MonoBehaviour
         // LIFE cards can never be used as attackers
         if (card.isLifeCard)
         {
-            // Show UI feedback so the player knows the click registered
-            if (card.cardOwner != gm.currentPlayer)
-                UIController.instance.ShowCombatUI("Select YOUR Avatar first, then click enemy LIFE card!");
-            else
-                UIController.instance.ShowCombatUI("Can't attack with LIFE cards! Select an Avatar.");
             Debug.Log($"[Combat] {card.cardName} is a LIFE card — can't attack with it. (owner={card.cardOwner}, current={gm.currentPlayer})");
             return;
         }
@@ -238,7 +229,6 @@ public class CombatController : MonoBehaviour
         // Must be YOUR avatar, on the board
         if (card.cardOwner != gm.currentPlayer)
         {
-            UIController.instance.ShowCombatUI("Select YOUR Avatar to attack with first!");
             Debug.Log($"[Combat] {card.cardName} is not your card.");
             return;
         }
@@ -257,7 +247,6 @@ public class CombatController : MonoBehaviour
         if (card.isTapped)
         {
             Debug.Log($"[Combat] {card.cardName} is tapped (นอน) — already attacked.");
-            UIController.instance.ShowCombatUI($"{card.cardName} already attacked this turn!");
             return;
         }
 
@@ -268,7 +257,6 @@ public class CombatController : MonoBehaviour
         Player op = gm.OpponentPlayerObj;
         if (op.AvatarsOnField == 0 && op.UnflippedLifeCards == 0 && !op.IsSahat)
         {
-            UIController.instance.ShowCombatUI("No enemy targets to attack!");
             Debug.Log("[Combat] No enemy targets — can't select attacker.");
             return;
         }
@@ -278,31 +266,16 @@ public class CombatController : MonoBehaviour
         card.SetAttackHighlight(true);
         combatState = CombatState.SelectingTarget;
 
-        // Ability 2: CombatThonSoop + AttackPowerBoost on attack declaration
-        if (AvatarAbilityController.instance != null)
-            AvatarAbilityController.instance.OnCombatEngagement(card, true);
+        // NOTE: Attacker abilities (AttackPowerBoost, CombatThonSoop) are triggered
+        // in TrySelectTarget() when the target is confirmed, NOT here at selection time.
+        // This prevents buffs from persisting if the attack is cancelled.
 
         // Highlight valid targets
         HighlightValidTargets(true);
 
-        // Different message depending on available targets
-        if (op.AvatarsOnField > 0)
-        {
-            UIController.instance.ShowCombatUI(
-                $"<b>{card.cardName}</b> (Power {card.power}) attacks!\nSelect an enemy Avatar as target.");
-        }
-        else if (op.IsSahat)
-        {
-            UIController.instance.ShowCombatUI(
-                $"<b>{card.cardName}</b> attacks!\n<color=#FF0000>\u0E2A\u0E32\u0E2B\u0E31\u0E2A!</color> Click enemy LIFE zone for the finishing blow!");
-        }
-        else
-        {
-            UIController.instance.ShowCombatUI(
-                $"<b>{card.cardName}</b> attacks!\nNo enemy Avatars — select a LIFE card to attack!");
-        }
-
         Debug.Log($"[Combat] Selected attacker: {card.cardName} (power {card.power})");
+        if (GameplayLogger.instance != null)
+            GameplayLogger.instance.LogCombat($"{card.cardName} (Pw:{card.power}) selected as attacker.");
     }
 
     // ════════════════════════════════════════════════════════════════
@@ -344,28 +317,33 @@ public class CombatController : MonoBehaviour
             Player op = gm.OpponentPlayerObj;
             Debug.Log($"[Combat] Target is LIFE card '{card.cardName}' (faceDown={card.isFaceDown}). Enemy avatars on field: {op.AvatarsOnField}");
 
+            // Power 0 avatars cannot hit LIFE cards
+            if (selectedAttacker.power <= 0)
+            {
+                Debug.Log($"[Combat] {selectedAttacker.cardName} has Power {selectedAttacker.power} — cannot attack LIFE cards.");
+                UIController.instance.ShowCombatUI(
+                    $"<color=red>{selectedAttacker.cardName}</color> has <b>0 Power</b> — cannot attack LIFE cards!");
+                return;
+            }
+
             // Can only attack LIFE cards when no enemy avatars exist
             if (op.AvatarsOnField > 0)
             {
                 Debug.Log("[Combat] Can't attack LIFE cards while enemy has Avatars on field.");
-                UIController.instance.ShowCombatUI(
-                    "Can't target LIFE cards — defeat all enemy Avatars first!");
                 return;
             }
 
             // ── DIRECT HIT (สาหัส) — face-up life card ──
             if (!card.isFaceDown && op.IsSahat)
             {
-                Debug.Log($"[Combat] DIRECT HIT! {selectedAttacker.cardName} → {card.cardOwner}'s LIFE zone (สาหัส)!");
-                ResolveDirectHit(selectedAttacker, card);
+                StartCoroutine(EngageAndResolveDirectHit(selectedAttacker, card));
                 return;
             }
 
             // ── Normal LIFE card attack — flip face-down card ──
             if (card.isFaceDown)
             {
-                Debug.Log($"[Combat] Resolving LIFE card attack: {selectedAttacker.cardName} → {card.cardName}");
-                ResolveLifeCardAttack(selectedAttacker, card);
+                StartCoroutine(EngageAndResolveLifeCardAttack(selectedAttacker, card));
                 return;
             }
 
@@ -381,12 +359,43 @@ public class CombatController : MonoBehaviour
             return;
         }
 
-        // Ability 2: CombatThonSoop on being targeted as defender
-        if (AvatarAbilityController.instance != null)
-            AvatarAbilityController.instance.OnCombatEngagement(card, false);
+        // Trigger abilities then resolve — uses coroutine so power boosts apply before combat
+        StartCoroutine(EngageAndResolveCombat(selectedAttacker, card));
+    }
 
-        // ── RESOLVE COMBAT ──
-        ResolveCombat(selectedAttacker, card);
+    // ════════════════════════════════════════════════════════════════
+    //  STEP 2.5 — ENGAGE ABILITIES THEN RESOLVE
+    // ════════════════════════════════════════════════════════════════
+
+    private IEnumerator EngageAndResolveCombat(Card attacker, Card defender)
+    {
+        // Wait for attacker abilities (e.g. CombatThonSoop, AttackPowerBoost)
+        if (AvatarAbilityController.instance != null)
+            yield return StartCoroutine(AvatarAbilityController.instance.OnCombatEngagementRoutine(attacker, true));
+
+        // Wait for defender abilities
+        if (AvatarAbilityController.instance != null)
+            yield return StartCoroutine(AvatarAbilityController.instance.OnCombatEngagementRoutine(defender, false));
+
+        ResolveCombat(attacker, defender);
+    }
+
+    private IEnumerator EngageAndResolveDirectHit(Card attacker, Card target)
+    {
+        if (AvatarAbilityController.instance != null)
+            yield return StartCoroutine(AvatarAbilityController.instance.OnCombatEngagementRoutine(attacker, true));
+
+        Debug.Log($"[Combat] DIRECT HIT! {attacker.cardName} → {target.cardOwner}'s LIFE zone (สาหัส)!");
+        ResolveDirectHit(attacker, target);
+    }
+
+    private IEnumerator EngageAndResolveLifeCardAttack(Card attacker, Card target)
+    {
+        if (AvatarAbilityController.instance != null)
+            yield return StartCoroutine(AvatarAbilityController.instance.OnCombatEngagementRoutine(attacker, true));
+
+        Debug.Log($"[Combat] Resolving LIFE card attack: {attacker.cardName} → {target.cardName}");
+        ResolveLifeCardAttack(attacker, target);
     }
 
     // ════════════════════════════════════════════════════════════════
@@ -399,6 +408,8 @@ public class CombatController : MonoBehaviour
         int defPower = defender.power;
 
         Debug.Log($"[Combat] {attacker.cardName} (ATK {atkPower}) vs {defender.cardName} (DEF {defPower})");
+        if (GameplayLogger.instance != null)
+            GameplayLogger.instance.LogCombat($"{attacker.cardName} ({atkPower}) vs {defender.cardName} ({defPower})");
 
         // Tap the attacker (นอน — lay down)
         attacker.SetTapped(true);
@@ -410,6 +421,8 @@ public class CombatController : MonoBehaviour
             UIController.instance.ShowCombatUI(
                 $"Both {attacker.cardName} and {defender.cardName} have 0 Power — nothing happens!");
             Debug.Log("[Combat] Power 0 vs 0 — no destruction.");
+            if (GameplayLogger.instance != null)
+                GameplayLogger.instance.LogCombat("Both have 0 Power — nothing happens.");
 
             // Reset for next attack
             selectedAttacker = null;
@@ -424,6 +437,8 @@ public class CombatController : MonoBehaviour
                 $"<color=green><b>{attacker.cardName}</b> ({atkPower})</color> defeats " +
                 $"<color=red>{defender.cardName} ({defPower})</color>!");
 
+            if (GameplayLogger.instance != null)
+                GameplayLogger.instance.LogCombat($"{attacker.cardName} defeats {defender.cardName}!");
             combatState = CombatState.Idle;
             HighlightValidTargets(false);
             StartCoroutine(DirectSendToHell(defender));
@@ -436,6 +451,8 @@ public class CombatController : MonoBehaviour
                 $"<color=green>{defender.cardName} ({defPower})</color> defeats " +
                 $"<color=red><b>{attacker.cardName}</b> ({atkPower})</color>!");
 
+            if (GameplayLogger.instance != null)
+                GameplayLogger.instance.LogCombat($"{defender.cardName} defeats {attacker.cardName}!");
             combatState = CombatState.Idle;
             HighlightValidTargets(false);
             StartCoroutine(FlipAndSendToHell(attacker));
@@ -448,6 +465,8 @@ public class CombatController : MonoBehaviour
                 $"<color=yellow>DRAW!</color> Both {attacker.cardName} and {defender.cardName} " +
                 $"destroyed ({atkPower} = {defPower})!");
 
+            if (GameplayLogger.instance != null)
+                GameplayLogger.instance.LogCombat($"DRAW! Both {attacker.cardName} and {defender.cardName} destroyed!");
             combatState = CombatState.Idle;
             HighlightValidTargets(false);
             StartCoroutine(DrawRotateAndSendToHell(attacker, defender));
@@ -483,6 +502,9 @@ public class CombatController : MonoBehaviour
         // Flip the LIFE card face-up (reveal it)
         lifeCard.FlipLifeCard();
 
+        // White blink on the attacked LIFE card
+        StartCoroutine(BlinkLifeCard(lifeCard, Color.white, 5));
+
         // Clear target highlights
         HighlightValidTargets(false);
 
@@ -500,6 +522,8 @@ public class CombatController : MonoBehaviour
         _lifeRevealAutoClose = StartCoroutine(AutoDismissLifeReveal(5f));
 
         Debug.Log($"[Combat] LIFE card revealed: {lifeCard.cardName}. Showing flavor text panel.");
+        if (GameplayLogger.instance != null)
+            GameplayLogger.instance.LogLife($"{attacker.cardName} attacks LIFE! Revealed: {lifeCard.cardName}");
     }
 
     // ════════════════════════════════════════════════════════════════
@@ -513,6 +537,8 @@ public class CombatController : MonoBehaviour
     private void ResolveDirectHit(Card attacker, Card lifeCard)
     {
         Debug.Log($"[Combat] DIRECT HIT! {attacker.cardName} attacks {lifeCard.cardOwner}'s LIFE zone!");
+        if (GameplayLogger.instance != null)
+            GameplayLogger.instance.LogCombat($"DIRECT HIT! {attacker.cardName} delivers the finishing blow!");
 
         // Tap the attacker
         attacker.SetTapped(true);
@@ -599,6 +625,10 @@ public class CombatController : MonoBehaviour
 
         // Check win condition (announces สาหัส status but doesn't end game)
         GameManager.instance.CheckWinCondition();
+
+        // สาหัส red blink on all 5 LIFE cards
+        if (lifeOwner.IsSahat)
+            StartCoroutine(BlinkAllLifeCards(lifeOwner, Color.red, 5));
 
         // Resume combat for next attack
         selectedAttacker = null;
@@ -782,6 +812,8 @@ public class CombatController : MonoBehaviour
         {
             cardOwner.hellZone.AddCard(card);
             Debug.Log($"[Combat] {card.cardName} → {card.cardOwner}'s Hell Zone.");
+            if (GameplayLogger.instance != null)
+                GameplayLogger.instance.LogCombat($"{card.cardName} → Hell Zone.");
         }
 
         // Ability 5: Recalculate HellPowerScaling (a card entered Hell)
@@ -807,6 +839,9 @@ public class CombatController : MonoBehaviour
 
         Player op = gm.OpponentPlayerObj;
 
+        // Power 0 attackers cannot target LIFE cards — only highlight enemy avatars
+        bool canTargetLife = selectedAttacker == null || selectedAttacker.power > 0;
+
         if (op.AvatarsOnField > 0)
         {
             // Highlight enemy avatars
@@ -816,7 +851,7 @@ public class CombatController : MonoBehaviour
                     zone.activeCard.SetReadyHighlight(on);
             }
         }
-        else if (op.IsSahat)
+        else if (canTargetLife && op.IsSahat)
         {
             // สาหัส: highlight ALL life cards (even face-up) for direct hit
             foreach (var zone in op.lifeZones)
@@ -826,7 +861,7 @@ public class CombatController : MonoBehaviour
                     zone.activeCard.SetReadyHighlight(on);
             }
         }
-        else
+        else if (canTargetLife)
         {
             // Highlight unflipped LIFE cards
             foreach (var zone in op.lifeZones)
@@ -855,6 +890,56 @@ public class CombatController : MonoBehaviour
 
         selectedAttacker = null;
         combatState = CombatState.SelectingAttacker;
-        UIController.instance.ShowCombatUI("Select an Avatar to attack with.");
+        UIController.instance.HideCombatUI();
+    }
+
+    // ════════════════════════════════════════════════════════════════
+    //  LIFE CARD BLINK EFFECTS
+    // ════════════════════════════════════════════════════════════════
+
+    /// <summary>
+    /// Blink a single LIFE card's glow on/off.
+    /// Used when a LIFE card is attacked (white blink).
+    /// </summary>
+    private IEnumerator BlinkLifeCard(Card card, Color color, int blinks)
+    {
+        float onTime = 0.15f;
+        float offTime = 0.1f;
+
+        for (int i = 0; i < blinks; i++)
+        {
+            card.SetDeathGlow(color, 0.8f);
+            yield return new WaitForSeconds(onTime);
+            card.SetDeathGlow(color, 0f);
+            yield return new WaitForSeconds(offTime);
+        }
+    }
+
+    /// <summary>
+    /// Blink ALL LIFE cards of a player red.
+    /// Used when สาหัส status is reached (all 5 flipped).
+    /// </summary>
+    private IEnumerator BlinkAllLifeCards(Player player, Color color, int blinks)
+    {
+        float onTime = 0.2f;
+        float offTime = 0.15f;
+
+        // Collect all LIFE cards
+        var lifeCards = new List<Card>();
+        foreach (var zone in player.lifeZones)
+        {
+            if (zone != null && zone.activeCard != null && zone.activeCard.isLifeCard)
+                lifeCards.Add(zone.activeCard);
+        }
+
+        for (int i = 0; i < blinks; i++)
+        {
+            foreach (var card in lifeCards)
+                card.SetDeathGlow(color, 0.9f);
+            yield return new WaitForSeconds(onTime);
+            foreach (var card in lifeCards)
+                card.SetDeathGlow(color, 0f);
+            yield return new WaitForSeconds(offTime);
+        }
     }
 }

@@ -102,6 +102,8 @@ public class MagicController : MonoBehaviour
 
         MagicType type = magicCard.magicSO.magicType;
         Debug.Log($"[MagicController] Playing {magicCard.cardName} as {type} magic.");
+        if (GameplayLogger.instance != null)
+            GameplayLogger.instance.LogMagic($"{magicCard.cardName} played as {type} magic.");
 
         switch (type)
         {
@@ -373,6 +375,8 @@ public class MagicController : MonoBehaviour
         modCard.SetModHighlight(true);
         Debug.Log($"[Magic] {modCard.cardName} equipped to {avatar.cardName}. " +
                   $"Mods attached: {avatar.attachedMods.Count}. Power: {avatar.power}");
+        if (GameplayLogger.instance != null)
+            GameplayLogger.instance.LogMagic($"{modCard.cardName} equipped to {avatar.cardName} (Pw:{avatar.power}).");
 
         UIController.instance?.UpdateGameInfo();
     }
@@ -584,6 +588,8 @@ public class MagicController : MonoBehaviour
         {
             // Simple React: destroy summoned avatar + consume React
             Debug.Log($"[React] ACTIVATED! {reactCard.cardName} destroys {target.cardName}!");
+            if (GameplayLogger.instance != null)
+                GameplayLogger.instance.LogMagic($"React! {reactCard.cardName} destroys {target.cardName}!");
             CombatController.instance.SendToHell(target);
             CombatController.instance.SendToHell(reactCard);
         }
@@ -949,6 +955,8 @@ public class MagicController : MonoBehaviour
 
         UIController.instance?.UpdateGameInfo();
         Debug.Log($"[Magic] Land magic {landCard.cardName} placed in LandMagic zone.");
+        if (GameplayLogger.instance != null)
+            GameplayLogger.instance.LogMagic($"Land magic {landCard.cardName} placed!");
     }
 
     /// <summary>

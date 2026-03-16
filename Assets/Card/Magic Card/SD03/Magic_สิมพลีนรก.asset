@@ -16,7 +16,7 @@ MonoBehaviour:
   description: "POWER +1 \u0E43\u0E2B\u0E49 Avatar [\u0E19\u0E23\u0E01] \u0E17\u0E38\u0E01\u0E43\u0E1A\u0E1A\u0E19\u0E2A\u0E19\u0E32\u0E21"
   cardCharacterSprite: {fileID: 21300000, guid: 6ea15a4cc7a0bbc4cbee6bfdbd7bfd8d, type: 3}
   gem: 2
-  cardSymbol: 0
+  cardSymbol: 4
   gemColor: 0
   magicType: 3
   effect: 7

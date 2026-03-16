@@ -77,6 +77,14 @@ public class GameManager : MonoBehaviour
     public Player GetPlayer(TurnPlayer p)
         => p == TurnPlayer.Player1 ? player1 : player2;
 
+    // ── Phase announcer colors per player ──
+    private static readonly Color P1_PHASE_COLOR = new Color(0x38 / 255f, 0x67 / 255f, 0xDD / 255f); // #3867DD
+    private static readonly Color P2_PHASE_COLOR = new Color(0xE7 / 255f, 0x45 / 255f, 0x45 / 255f); // #E74545
+
+    /// <summary>Returns the phase announcer color for the current player.</summary>
+    private Color CurrentPhaseColor
+        => currentPlayer == TurnPlayer.Player1 ? P1_PHASE_COLOR : P2_PHASE_COLOR;
+
     // ════════════════════════════════════════════════════════════════
     //  GAME START
     // ════════════════════════════════════════════════════════════════
@@ -150,6 +158,9 @@ public class GameManager : MonoBehaviour
         currentPlayer = TurnPlayer.Player1;
         UIController.instance.ShowMulliganUI("Player 1 — Select cards to swap, then press Swap. Or press Keep All.");
         Debug.Log("[GameManager] Setup: LIFE cards dealt + both players drew 5 cards. P1 mulligan begins.");
+        if (GameplayLogger.instance != null)
+            GameplayLogger.instance.LogTurn("Game started! LIFE cards dealt, hands drawn. P1 mulligan.");
+
     }
 
     /// <summary>
@@ -198,6 +209,8 @@ public class GameManager : MonoBehaviour
         cp.deck.ShuffleDeck();
 
         Debug.Log($"[GameManager] {currentPlayer} swapped {swapCount} cards.");
+        if (GameplayLogger.instance != null)
+            GameplayLogger.instance.LogDraw($"{CurrentPlayerName()} swapped {swapCount} card(s) (mulligan).");
 
         AdvanceMulligan();
     }
@@ -220,6 +233,8 @@ public class GameManager : MonoBehaviour
         }
 
         Debug.Log($"[GameManager] {currentPlayer} kept all cards.");
+        if (GameplayLogger.instance != null)
+            GameplayLogger.instance.LogDraw($"{CurrentPlayerName()} kept all cards.");
         AdvanceMulligan();
     }
 
@@ -263,6 +278,8 @@ public class GameManager : MonoBehaviour
         if (cp != null && cp.deck != null)
         {
             Debug.Log("[GameManager] Setup complete! Turn 1 — P1 draws +2 bonus cards.");
+            if (GameplayLogger.instance != null)
+                GameplayLogger.instance.LogTurn("Setup complete! Turn 1 begins. P1 draws +2 bonus cards.");
             StartCoroutine(DrawThenMainPhase(cp, 2));
         }
         else
@@ -291,7 +308,7 @@ public class GameManager : MonoBehaviour
         // Show stomp animation, then proceed with draw logic
         if (PhaseAnnouncer.instance != null)
         {
-            PhaseAnnouncer.instance.AnnouncePhase("Draw Phase", () => ExecuteDrawPhase());
+            PhaseAnnouncer.instance.AnnouncePhase("Draw Phase", CurrentPhaseColor, () => ExecuteDrawPhase());
         }
         else
         {
@@ -339,12 +356,27 @@ public class GameManager : MonoBehaviour
     /// Main Phase:
     /// - Player can summon avatars, play magic cards.
     /// - BattleController handles summon logic.
+    /// Shows a "Main Phase" stomp announcement before player gets control.
     /// </summary>
     public void EnterMainPhase()
     {
         currentPhase = TurnPhase.Main;
         UIController.instance.UpdateHUD(currentPlayer, currentPhase);
 
+        // Show stomp animation, then proceed with main phase logic
+        if (PhaseAnnouncer.instance != null)
+        {
+            PhaseAnnouncer.instance.AnnouncePhase("Main Phase", CurrentPhaseColor, () => ExecuteMainPhase());
+        }
+        else
+        {
+            ExecuteMainPhase();
+        }
+    }
+
+    /// <summary>Executes the actual Main Phase logic after the announcement.</summary>
+    private void ExecuteMainPhase()
+    {
         // ── LIFE CARD EFFECT: Draw queued cards from LIFE flips (sequentially) ──
         Player cp = CurrentPlayerObj;
         if (cp != null && cp.pendingLifeDraws > 0)
@@ -359,14 +391,20 @@ public class GameManager : MonoBehaviour
         }
 
         Debug.Log($"[GameManager] {currentPlayer} — MAIN PHASE");
+        if (GameplayLogger.instance != null)
+            GameplayLogger.instance.LogTurn($"{CurrentPlayerName()} — Main Phase");
     }
 
-    /// <summary>Draw N cards sequentially, then enter Main Phase.</summary>
+    /// <summary>Draw N cards sequentially, wait a beat, then enter Main Phase.</summary>
     private IEnumerator DrawThenMainPhase(Player cp, int count)
     {
         yield return cp.deck.DrawMultipleCards(count);
-        if (!isGameOver)
-            EnterMainPhase();
+        if (isGameOver) yield break;
+
+        // Small pause so the player can see the drawn cards before Main Phase stomp
+        yield return new WaitForSeconds(0.8f);
+
+        EnterMainPhase();
     }
 
     /// <summary>Draw pending LIFE effect cards sequentially during Main Phase.</summary>
@@ -388,6 +426,20 @@ public class GameManager : MonoBehaviour
         currentPhase = TurnPhase.Battle;
         UIController.instance.UpdateHUD(currentPlayer, currentPhase);
 
+        // Show stomp animation, then proceed with battle logic
+        if (PhaseAnnouncer.instance != null)
+        {
+            PhaseAnnouncer.instance.AnnouncePhase("Battle Phase", CurrentPhaseColor, () => ExecuteBattlePhase());
+        }
+        else
+        {
+            ExecuteBattlePhase();
+        }
+    }
+
+    /// <summary>Executes the actual Battle Phase logic after the announcement.</summary>
+    private void ExecuteBattlePhase()
+    {
         // ── HAND SLIDE: no hand interaction during Battle Phase ──
         CurrentPlayerObj.hand.SlideDown();
 
@@ -396,6 +448,8 @@ public class GameManager : MonoBehaviour
             CombatController.instance.BeginBattlePhase();
 
         Debug.Log($"[GameManager] {currentPlayer} — BATTLE PHASE");
+        if (GameplayLogger.instance != null)
+            GameplayLogger.instance.LogTurn($"{CurrentPlayerName()} — Battle Phase");
     }
 
     /// <summary>
@@ -408,6 +462,8 @@ public class GameManager : MonoBehaviour
         currentPhase = TurnPhase.End;
         UIController.instance.UpdateHUD(currentPlayer, currentPhase);
         Debug.Log($"[GameManager] {currentPlayer} — END PHASE");
+        if (GameplayLogger.instance != null)
+            GameplayLogger.instance.LogTurn($"{CurrentPlayerName()} — End Phase");
 
         // ── DISCARD-TO-7: check hand limit ──
         Player cp = CurrentPlayerObj;
@@ -464,6 +520,8 @@ public class GameManager : MonoBehaviour
                 cp.hellZone.AddCard(card);
 
             Debug.Log($"[Discard] {card.cardName} discarded to Hell Zone.");
+            if (GameplayLogger.instance != null)
+                GameplayLogger.instance.LogDraw($"{card.cardName} discarded to Hell.");
         }
 
         // Clear any remaining highlights (safety)
@@ -499,6 +557,8 @@ public class GameManager : MonoBehaviour
                         : TurnPlayer.Player1;
 
         Debug.Log($"[GameManager] Turn #{turnNumber} switched → {currentPlayer}");
+        if (GameplayLogger.instance != null)
+            GameplayLogger.instance.LogTurn($"── Turn {turnNumber} → {CurrentPlayerName()} ──");
         EnterDrawPhase();
     }
 
@@ -616,6 +676,8 @@ public class GameManager : MonoBehaviour
         string loserName = loser == TurnPlayer.Player1 ? "Player 1" : "Player 2";
 
         Debug.Log($"[GameManager] {loserName} loses — {reason}. {winner} WINS!");
+        if (GameplayLogger.instance != null)
+            GameplayLogger.instance.LogGameOver($"{winner} WINS! {loserName} — {reason}");
         UIController.instance.ShowGameOver($"{winner} WINS!\n{loserName}'s {reason}");
     }
 
@@ -648,10 +710,14 @@ public class GameManager : MonoBehaviour
         if (player1.IsSahat)
         {
             Debug.Log("[GameManager] Player 1 is สาหัส (all LIFE flipped)! Opponent must direct hit to win.");
+            if (GameplayLogger.instance != null)
+                GameplayLogger.instance.LogLife("Player 1 is สาหัส! All LIFE exposed!");
         }
         if (player2.IsSahat)
         {
             Debug.Log("[GameManager] Player 2 is สาหัส (all LIFE flipped)! Opponent must direct hit to win.");
+            if (GameplayLogger.instance != null)
+                GameplayLogger.instance.LogLife("Player 2 is สาหัส! All LIFE exposed!");
         }
 
         return false; // Game never ends from สาหัส alone
@@ -668,6 +734,8 @@ public class GameManager : MonoBehaviour
         string loserName = loser == TurnPlayer.Player1 ? "Player 1" : "Player 2";
         string winnerName = loser == TurnPlayer.Player1 ? "PLAYER 2" : "PLAYER 1";
         Debug.Log($"[GameManager] {loserName} receives DIRECT HIT while สาหัส! {winnerName} WINS!");
+        if (GameplayLogger.instance != null)
+            GameplayLogger.instance.LogGameOver($"DIRECT HIT! {winnerName} WINS! {loserName} is defeated!");
         UIController.instance.ShowGameOver($"{winnerName} WINS!\n{loserName} received a direct hit! (\u0E2A\u0E32\u0E2B\u0E31\u0E2A)");
     }
 }

@@ -207,6 +207,14 @@ public class BattleController : MonoBehaviour
         }
 
         Debug.Log($"[Summon] {pendingAvatar.cardName} summoned to {placePoint.name}!");
+        if (GameplayLogger.instance != null)
+        {
+            string tributeNames = "";
+            foreach (Card t in currentTributes)
+                tributeNames += (tributeNames.Length > 0 ? ", " : "") + t.cardName;
+            string tributeInfo = tributeNames.Length > 0 ? $" (tributed: {tributeNames})" : "";
+            GameplayLogger.instance.LogSummon($"{pendingAvatar.cardName} summoned!{tributeInfo}");
+        }
 
         // Save reference before ResetSummonState() clears pendingAvatar
         Card summonedAvatar = pendingAvatar;

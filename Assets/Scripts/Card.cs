@@ -374,6 +374,8 @@ public class Card : MonoBehaviour, IPointerEnterHandler, IPointerExitHandler, IP
                     theHC.RemoveCardFromHand(this);
                     theHC.SlideUp();  // Card placed — slide hand back up
                 }
+                if (GameplayLogger.instance != null)
+                    GameplayLogger.instance.LogSummon($"{cardName} summoned! ");
                 UIController.instance?.UpdateGameInfo();
                 return;
             }

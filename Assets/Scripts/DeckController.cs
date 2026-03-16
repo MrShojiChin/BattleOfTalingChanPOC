@@ -25,9 +25,15 @@ public class DeckController : MonoBehaviour
     [Header("LIFE Cards (separate from main deck — 5 per player)")]
     public List<LifeCardSO> lifeDeckToUse = new List<LifeCardSO>();
 
+    [Header("Deck Visual")]
+    [Tooltip("Reference to the Card Model child that represents the deck stack visually.")]
+    public Transform deckVisual;
+
     private List<BaseCardSO> activeCards = new List<BaseCardSO>();
     private int lifeCardIndex = 0;  // Tracks how many LIFE cards have been dealt
     private bool deckInitialized = false;
+    private Vector3 deckVisualFullScale;
+    private int initialDeckCount;
 
     void Start()
     {
@@ -44,9 +50,21 @@ public class DeckController : MonoBehaviour
         activeCards.Clear();
         deckInitialized = true;
 
+        // Deduplicate: only allow one copy of each BaseCardSO in the deck
         List<BaseCardSO> tempDeck = new List<BaseCardSO>();
-        tempDeck.AddRange(deckToUse);
+        HashSet<BaseCardSO> seen = new HashSet<BaseCardSO>();
+        foreach (var card in deckToUse)
+        {
+            if (card == null) continue;
+            if (!seen.Add(card))
+            {
+                Debug.LogWarning($"[DeckController] Duplicate card '{card.cardName}' removed from deck.");
+                continue;
+            }
+            tempDeck.Add(card);
+        }
 
+        // Shuffle into activeCards (Fisher-Yates via random removal)
         int iterations = 0;
         while (tempDeck.Count > 0 && iterations < 500)
         {
@@ -55,6 +73,33 @@ public class DeckController : MonoBehaviour
             tempDeck.RemoveAt(selected);
             iterations++;
         }
+
+        // Store initial count for deck visual scaling
+        initialDeckCount = activeCards.Count;
+        if (deckVisual != null)
+            deckVisualFullScale = deckVisual.localScale;
+        UpdateDeckVisual();
+    }
+
+    /// <summary>
+    /// Scale the deck visual (Card Model child) based on remaining card count.
+    /// Hides it entirely when deck is empty.
+    /// </summary>
+    private void UpdateDeckVisual()
+    {
+        if (deckVisual == null || initialDeckCount <= 0) return;
+
+        if (activeCards.Count <= 0)
+        {
+            deckVisual.gameObject.SetActive(false);
+            return;
+        }
+
+        deckVisual.gameObject.SetActive(true);
+        float ratio = activeCards.Count / (float)initialDeckCount;
+        Vector3 scale = deckVisualFullScale;
+        scale.z = deckVisualFullScale.z * ratio;
+        deckVisual.localScale = scale;
     }
 
     /// <summary>
@@ -108,11 +153,14 @@ public class DeckController : MonoBehaviour
         newCard.SetupCard();
 
         activeCards.RemoveAt(0);
+        UpdateDeckVisual();
 
         // Add to the OWNER's hand (not a global singleton)
         owner.hand.AddCardToHand(newCard);
 
         Debug.Log($"[Deck] {owner.playerId} drew {newCard.cardName}. Cards left: {activeCards.Count}");
+        if (GameplayLogger.instance != null)
+            GameplayLogger.instance.LogDraw($"{owner.playerId} drew {newCard.cardName}. (Deck: {activeCards.Count})");
 
         // Deck hits 0 after drawing → immediate loss
         if (activeCards.Count == 0 && GameManager.instance != null && !GameManager.instance.isGameOver)
@@ -202,8 +250,11 @@ public class DeckController : MonoBehaviour
                 CombatController.instance.SendToHell(newCard);
                 milledCards.Add(newCard);
                 Debug.Log($"[Mill] {owner.playerId}: {newCard.cardName} sent from deck to Hell.");
+                if (GameplayLogger.instance != null)
+                    GameplayLogger.instance.LogDraw($"{owner.playerId} milled {newCard.cardName} to Hell.");
             }
         }
+        UpdateDeckVisual();
         return milledCards;
     }
 
@@ -283,6 +334,7 @@ public class DeckController : MonoBehaviour
         newCard.SetupCard();
 
         owner.hand.AddCardToHand(newCard);
+        UpdateDeckVisual();
         Debug.Log($"[Search] {owner.playerId}: Found {newCard.cardName} (cost {newCard.cost}) in deck → added to hand. Deck shuffled.");
 
         return newCard;
@@ -334,6 +386,7 @@ public class DeckController : MonoBehaviour
         newCard.cannotBeTribute = true;
 
         owner.hand.AddCardToHand(newCard);
+        UpdateDeckVisual();
         Debug.Log($"[Search] {owner.playerId}: Found '{newCard.cardName}' by name (cost {newCard.cost}) → hand. Cannot be tribute. Deck shuffled.");
 
         return newCard;
@@ -408,6 +461,7 @@ public class DeckController : MonoBehaviour
         newCard.cannotBeTribute = true;
 
         owner.hand.AddCardToHand(newCard);
+        UpdateDeckVisual();
         Debug.Log($"[Search] {owner.playerId}: Player selected '{newCard.cardName}' (cost {newCard.cost}) from deck → hand. Cannot be tribute. Deck shuffled.");
 
         return newCard;
@@ -487,6 +541,7 @@ public class DeckController : MonoBehaviour
     public void ReturnCardToBottom(BaseCardSO cardSO)
     {
         activeCards.Add(cardSO);  // Add to end = bottom of deck
+        UpdateDeckVisual();
     }
 
     /// <summary>
@@ -500,5 +555,6 @@ public class DeckController : MonoBehaviour
             int j = Random.Range(0, i + 1);
             (activeCards[i], activeCards[j]) = (activeCards[j], activeCards[i]);
         }
+        UpdateDeckVisual();
     }
 }

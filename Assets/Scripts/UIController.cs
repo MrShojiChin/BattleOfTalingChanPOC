@@ -1,8 +1,10 @@
+using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.UI;
 using UnityEngine.EventSystems;
 using UnityEngine.InputSystem;
+using UnityEngine.SceneManagement;
 using TMPro;
 
 /// <summary>
@@ -92,6 +94,7 @@ public class UIController : MonoBehaviour
     [Header("── Game Over UI ──────────────────────")]
     public GameObject gameOverPanel;        // Full-screen overlay when game ends
     public TMP_Text   gameOverText;         // "PLAYER X WINS!" message
+    public Button     gameOverRestartButton; // "Play Again" button
 
     // ════════════════════════════════════════════════════════════════
     //  10. CARD PREVIEW (right-click zoom)
@@ -162,6 +165,16 @@ public class UIController : MonoBehaviour
     public Button     lifeRevealContinueButton;     // "Continue" button
 
     // ════════════════════════════════════════════════════════════════
+    //  14. GAMEPLAY LOG PANEL
+    // ════════════════════════════════════════════════════════════════
+
+    [Header("── Gameplay Log ──────────────────")]
+    public GameObject  gameLogPanel;          // The log panel container
+    public TMP_Text    gameLogText;           // Scrollable text content
+    public ScrollRect  gameLogScrollRect;     // Auto-scroll to bottom
+    public Button      gameLogToggleButton;   // Toggle show/hide
+
+    // ════════════════════════════════════════════════════════════════
     //  SETUP
     // ════════════════════════════════════════════════════════════════
 
@@ -172,6 +185,7 @@ public class UIController : MonoBehaviour
 
     private void Start()
     {
+        BuildGameOverPanel();
         HidePaymentUI();
         HideCombatUI();
         HideMulliganUI();
@@ -182,6 +196,7 @@ public class UIController : MonoBehaviour
         HideDeckSearchState();
         HideReactUI();
         HideLifeRevealPanel();
+        InitGameLog();
 
         // Life Reveal: click-anywhere-to-close is handled by CombatController.Update()
         // Hide the Continue button if it still exists in the scene
@@ -381,7 +396,7 @@ public class UIController : MonoBehaviour
             playerGemPaidText.text = $"Gems Paid: {currentGem} / {requiredGem}";
 
         if (summonStatusText != null)
-            summonStatusText.text = $"Summoning <b>{avatarName}</b>\nDrag cards to the Hell Point to pay.";
+            summonStatusText.text = $"Summoning <b>{avatarName}</b>";
     }
 
     /// <summary>Show when gem payment is complete — avatar is ready to place.</summary>
@@ -390,7 +405,7 @@ public class UIController : MonoBehaviour
         if (paymentPanel != null) paymentPanel.SetActive(true);
 
         if (summonStatusText != null)
-            summonStatusText.text = $"<color=green><b>{avatarName}</b> is READY!</color>\nDrag it to a board slot.";
+            summonStatusText.text = $"<color=green><b>{avatarName}</b> is READY!</color>";
     }
 
     /// <summary>Hide the payment panel entirely.</summary>
@@ -499,8 +514,96 @@ public class UIController : MonoBehaviour
     }
 
     // ════════════════════════════════════════════════════════════════
-    //  GAME OVER UI  (Win / Loss — สหัส)
+    //  GAME OVER UI  (Win / Loss — สาหัส)
     // ════════════════════════════════════════════════════════════════
+
+    /// <summary>
+    /// Build the Game Over panel at runtime if not assigned in Inspector.
+    /// Dark overlay + winner text + "Play Again" button.
+    /// </summary>
+    private void BuildGameOverPanel()
+    {
+        if (gameOverPanel != null) return; // Already assigned in Inspector
+
+        Canvas canvas = GetComponentInParent<Canvas>();
+        if (canvas == null) canvas = GetComponent<Canvas>();
+        if (canvas == null) return;
+
+        // ── Root panel (dark overlay) ──
+        gameOverPanel = new GameObject("GameOverPanel");
+        gameOverPanel.transform.SetParent(canvas.transform, false);
+
+        RectTransform panelRect = gameOverPanel.AddComponent<RectTransform>();
+        panelRect.anchorMin = Vector2.zero;
+        panelRect.anchorMax = Vector2.one;
+        panelRect.offsetMin = Vector2.zero;
+        panelRect.offsetMax = Vector2.zero;
+
+        Image overlay = gameOverPanel.AddComponent<Image>();
+        overlay.color = new Color(0f, 0f, 0f, 0.85f);
+        overlay.raycastTarget = true; // Block clicks behind
+
+        // ── Winner text ──
+        GameObject textObj = new GameObject("GameOverText");
+        textObj.transform.SetParent(gameOverPanel.transform, false);
+
+        RectTransform textRect = textObj.AddComponent<RectTransform>();
+        textRect.anchorMin = new Vector2(0.5f, 0.55f);
+        textRect.anchorMax = new Vector2(0.5f, 0.55f);
+        textRect.sizeDelta = new Vector2(800f, 200f);
+
+        gameOverText = textObj.AddComponent<TextMeshProUGUI>();
+        gameOverText.text = "";
+        gameOverText.fontSize = 64;
+        gameOverText.alignment = TextAlignmentOptions.Center;
+        gameOverText.color = Color.white;
+        gameOverText.enableWordWrapping = true;
+
+        // ── "Play Again" button ──
+        GameObject btnObj = new GameObject("PlayAgainButton");
+        btnObj.transform.SetParent(gameOverPanel.transform, false);
+
+        RectTransform btnRect = btnObj.AddComponent<RectTransform>();
+        btnRect.anchorMin = new Vector2(0.5f, 0.3f);
+        btnRect.anchorMax = new Vector2(0.5f, 0.3f);
+        btnRect.sizeDelta = new Vector2(300f, 70f);
+
+        Image btnImage = btnObj.AddComponent<Image>();
+        btnImage.color = new Color(0.15f, 0.65f, 0.15f, 1f); // Green
+
+        gameOverRestartButton = btnObj.AddComponent<Button>();
+        // Hover / press color tint
+        ColorBlock cb = gameOverRestartButton.colors;
+        cb.highlightedColor = new Color(0.2f, 0.8f, 0.2f, 1f);
+        cb.pressedColor     = new Color(0.1f, 0.5f, 0.1f, 1f);
+        gameOverRestartButton.colors = cb;
+
+        // Button label
+        GameObject btnLabel = new GameObject("Label");
+        btnLabel.transform.SetParent(btnObj.transform, false);
+
+        RectTransform labelRect = btnLabel.AddComponent<RectTransform>();
+        labelRect.anchorMin = Vector2.zero;
+        labelRect.anchorMax = Vector2.one;
+        labelRect.offsetMin = Vector2.zero;
+        labelRect.offsetMax = Vector2.zero;
+
+        TMP_Text labelText = btnLabel.AddComponent<TextMeshProUGUI>();
+        labelText.text = "Play Again";
+        labelText.fontSize = 36;
+        labelText.alignment = TextAlignmentOptions.Center;
+        labelText.color = Color.white;
+
+        gameOverRestartButton.onClick.AddListener(OnPlayAgainClicked);
+
+        gameOverPanel.SetActive(false);
+    }
+
+    /// <summary>Reload the current scene to restart the game.</summary>
+    private void OnPlayAgainClicked()
+    {
+        SceneManager.LoadScene(SceneManager.GetActiveScene().buildIndex);
+    }
 
     /// <summary>Show the game over overlay with the winner message.</summary>
     public void ShowGameOver(string message)
@@ -1379,5 +1482,271 @@ public class UIController : MonoBehaviour
                 }
             }
         }
+    }
+
+    // ════════════════════════════════════════════════════════════════
+    //  14. GAMEPLAY LOG — scrollable in-game event log
+    // ════════════════════════════════════════════════════════════════
+
+    private void InitGameLog()
+    {
+        // Subscribe to log updates
+        if (GameplayLogger.instance != null)
+            GameplayLogger.instance.OnLogUpdated += RefreshGameLog;
+
+        // ── Auto-create toggle button if not assigned ──
+        if (gameLogToggleButton == null && gameLogPanel != null)
+        {
+            Transform canvas = gameLogPanel.transform.parent;
+            if (canvas != null)
+            {
+                GameObject btnObj = new GameObject("GameLogToggleBtn",
+                    typeof(RectTransform), typeof(Image), typeof(Button));
+                btnObj.transform.SetParent(canvas, false);
+                gameLogToggleButton = btnObj.GetComponent<Button>();
+
+                RectTransform btnRT = btnObj.GetComponent<RectTransform>();
+                btnRT.anchorMin = new Vector2(0f, 0f);
+                btnRT.anchorMax = new Vector2(0f, 0f);
+                btnRT.pivot     = new Vector2(0f, 0f);
+                btnRT.anchoredPosition = new Vector2(10f, 265f);
+            }
+        }
+
+        // Wire toggle button + style it as a circle with clipboard icon
+        if (gameLogToggleButton != null)
+        {
+            gameLogToggleButton.onClick.AddListener(ToggleGameLog);
+            StyleLogButtonAsCircle(gameLogToggleButton);
+
+            // ── SAFETY: If the button is a child of the log panel,
+            //    re-parent it to the Canvas so it stays visible when panel hides ──
+            if (gameLogPanel != null
+                && gameLogToggleButton.transform.IsChildOf(gameLogPanel.transform))
+            {
+                Transform canvas = gameLogPanel.transform.parent;
+                gameLogToggleButton.transform.SetParent(canvas, true);
+                gameLogToggleButton.transform.SetAsLastSibling();
+            }
+
+            // Always ensure button renders on top
+            gameLogToggleButton.transform.SetAsLastSibling();
+        }
+
+        // Start with log panel visible (player can toggle off)
+        if (gameLogPanel != null)
+            gameLogPanel.SetActive(true);
+
+        // Load any entries that were logged before we subscribed
+        RefreshGameLog();
+    }
+
+    /// <summary>
+    /// Styles the log toggle button as a circle with a clipboard icon.
+    /// Generates circle + clipboard sprites programmatically (no external assets needed).
+    /// </summary>
+    private void StyleLogButtonAsCircle(Button btn)
+    {
+        RectTransform rt = btn.GetComponent<RectTransform>();
+        if (rt == null) return;
+
+        // ── Make it square (circle) ──
+        float size = 48f;
+        rt.sizeDelta = new Vector2(size, size);
+
+        // ── Apply circle sprite to the button image ──
+        Image btnImage = btn.GetComponent<Image>();
+        if (btnImage != null)
+        {
+            btnImage.sprite = GenerateCircleSprite(64);
+            btnImage.type = Image.Type.Simple;
+            btnImage.color = new Color(0.15f, 0.15f, 0.20f, 0.85f);
+        }
+
+        // ── Button color states ──
+        ColorBlock cb = btn.colors;
+        cb.normalColor      = new Color(0.15f, 0.15f, 0.20f, 0.85f);
+        cb.highlightedColor = new Color(0.30f, 0.30f, 0.40f, 0.95f);
+        cb.pressedColor     = new Color(0.10f, 0.10f, 0.15f, 1.00f);
+        cb.selectedColor    = cb.normalColor;
+        btn.colors = cb;
+
+        // ── Remove existing text children (the "LOG" label) ──
+        foreach (Transform child in btn.transform)
+        {
+            TMP_Text tmpText = child.GetComponent<TMP_Text>();
+            UnityEngine.UI.Text legacyText = child.GetComponent<UnityEngine.UI.Text>();
+            if (tmpText != null || legacyText != null)
+                child.gameObject.SetActive(false);
+        }
+
+        // ── Add clipboard icon as a child Image ──
+        GameObject iconObj = new GameObject("ClipboardIcon", typeof(RectTransform), typeof(Image));
+        iconObj.transform.SetParent(btn.transform, false);
+
+        RectTransform iconRT = iconObj.GetComponent<RectTransform>();
+        iconRT.anchorMin = new Vector2(0.5f, 0.5f);
+        iconRT.anchorMax = new Vector2(0.5f, 0.5f);
+        iconRT.pivot     = new Vector2(0.5f, 0.5f);
+        iconRT.sizeDelta = new Vector2(28f, 28f);
+        iconRT.anchoredPosition = Vector2.zero;
+
+        Image iconImage = iconObj.GetComponent<Image>();
+        iconImage.sprite = GenerateClipboardSprite(64);
+        iconImage.type = Image.Type.Simple;
+        iconImage.color = Color.white;
+        iconImage.raycastTarget = false;
+    }
+
+    /// <summary>Generates a filled circle sprite at runtime.</summary>
+    private Sprite GenerateCircleSprite(int resolution)
+    {
+        Texture2D tex = new Texture2D(resolution, resolution, TextureFormat.RGBA32, false);
+        tex.filterMode = FilterMode.Bilinear;
+
+        float center = resolution / 2f;
+        float radius = center - 1f;
+
+        for (int y = 0; y < resolution; y++)
+        {
+            for (int x = 0; x < resolution; x++)
+            {
+                float dx = x - center + 0.5f;
+                float dy = y - center + 0.5f;
+                float dist = Mathf.Sqrt(dx * dx + dy * dy);
+
+                if (dist <= radius - 1f)
+                    tex.SetPixel(x, y, Color.white);
+                else if (dist <= radius)
+                {
+                    // Anti-aliased edge
+                    float alpha = Mathf.Clamp01(radius - dist + 1f);
+                    tex.SetPixel(x, y, new Color(1f, 1f, 1f, alpha));
+                }
+                else
+                    tex.SetPixel(x, y, new Color(1f, 1f, 1f, 0f));
+            }
+        }
+
+        tex.Apply();
+        return Sprite.Create(tex, new Rect(0, 0, resolution, resolution),
+                             new Vector2(0.5f, 0.5f), 100f);
+    }
+
+    /// <summary>
+    /// Generates a clipboard icon sprite at runtime (64×64).
+    /// Draws: board body, top clip, and 3 horizontal text lines.
+    /// </summary>
+    private Sprite GenerateClipboardSprite(int res)
+    {
+        Texture2D tex = new Texture2D(res, res, TextureFormat.RGBA32, false);
+        tex.filterMode = FilterMode.Bilinear;
+
+        // Clear to transparent
+        Color clear = new Color(1f, 1f, 1f, 0f);
+        Color white = Color.white;
+        Color[] pixels = new Color[res * res];
+        for (int i = 0; i < pixels.Length; i++) pixels[i] = clear;
+        tex.SetPixels(pixels);
+
+        // Normalized coordinates helper (0-1 range mapped to res)
+        // Board body: rounded rect from (0.22,0.06) to (0.78,0.82)
+        float boardL = 0.22f, boardR = 0.78f, boardB = 0.06f, boardT = 0.82f;
+        float boardRadius = 0.06f;
+
+        // Clip: centered tab from (0.34,0.76) to (0.66,0.94) with rounded top
+        float clipL = 0.34f, clipR = 0.66f, clipB = 0.76f, clipT = 0.94f;
+        float clipRadius = 0.06f;
+
+        // Text lines (3 horizontal bars)
+        float lineL = 0.32f, lineR = 0.68f;
+        float lineH = 0.04f; // thickness
+        float[] lineYs = { 0.58f, 0.44f, 0.30f }; // center Y of each line
+
+        for (int y = 0; y < res; y++)
+        {
+            for (int x = 0; x < res; x++)
+            {
+                float nx = (float)x / res;
+                float ny = (float)y / res;
+
+                bool inBoard = IsInRoundedRect(nx, ny, boardL, boardB, boardR, boardT, boardRadius);
+                bool inClip  = IsInRoundedRect(nx, ny, clipL, clipB, clipR, clipT, clipRadius);
+
+                bool inLine = false;
+                foreach (float ly in lineYs)
+                {
+                    if (nx >= lineL && nx <= lineR && ny >= ly - lineH / 2f && ny <= ly + lineH / 2f)
+                    { inLine = true; break; }
+                }
+
+                if (inClip)
+                    tex.SetPixel(x, y, white);
+                else if (inBoard && !inLine)
+                    tex.SetPixel(x, y, white);
+                else if (inBoard && inLine)
+                    tex.SetPixel(x, y, clear); // Lines are "cut out" of the board
+            }
+        }
+
+        tex.Apply();
+        return Sprite.Create(tex, new Rect(0, 0, res, res),
+                             new Vector2(0.5f, 0.5f), 100f);
+    }
+
+    /// <summary>Point-in-rounded-rect test for sprite generation.</summary>
+    private bool IsInRoundedRect(float px, float py, float l, float b, float r, float t, float rad)
+    {
+        if (px < l || px > r || py < b || py > t) return false;
+
+        // Check corners
+        float innerL = l + rad, innerR = r - rad;
+        float innerB = b + rad, innerT = t - rad;
+
+        if (px < innerL && py < innerB)
+            return Dist(px, py, innerL, innerB) <= rad;
+        if (px > innerR && py < innerB)
+            return Dist(px, py, innerR, innerB) <= rad;
+        if (px < innerL && py > innerT)
+            return Dist(px, py, innerL, innerT) <= rad;
+        if (px > innerR && py > innerT)
+            return Dist(px, py, innerR, innerT) <= rad;
+
+        return true;
+    }
+
+    private float Dist(float x1, float y1, float x2, float y2)
+    {
+        float dx = x1 - x2, dy = y1 - y2;
+        return Mathf.Sqrt(dx * dx + dy * dy);
+    }
+
+    /// <summary>Refresh the log text from GameplayLogger entries.</summary>
+    public void RefreshGameLog()
+    {
+        if (gameLogText == null || GameplayLogger.instance == null) return;
+
+        // Only auto-scroll if user is already near the bottom (not reading old entries)
+        bool wasAtBottom = gameLogScrollRect == null
+            || gameLogScrollRect.verticalNormalizedPosition <= 0.05f;
+
+        gameLogText.text = GameplayLogger.instance.GetFullLog();
+
+        if (wasAtBottom && gameLogScrollRect != null)
+            StartCoroutine(ScrollLogToBottom());
+    }
+
+    private IEnumerator ScrollLogToBottom()
+    {
+        yield return null; // Wait one frame for layout rebuild
+        if (gameLogScrollRect != null)
+            gameLogScrollRect.verticalNormalizedPosition = 0f;
+    }
+
+    /// <summary>Toggle log panel visibility.</summary>
+    public void ToggleGameLog()
+    {
+        if (gameLogPanel != null)
+            gameLogPanel.SetActive(!gameLogPanel.activeSelf);
     }
 }

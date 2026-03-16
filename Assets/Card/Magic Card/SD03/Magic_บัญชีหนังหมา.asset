@@ -20,7 +20,7 @@ MonoBehaviour:
     cost \u0E43\u0E19\u0E01\u0E32\u0E23\u0E2D\u0E31\u0E0D\u0E40\u0E0A\u0E34\u0E0D\u0E44\u0E14\u0E49"
   cardCharacterSprite: {fileID: 21300000, guid: 16cfbc0b2cf17d14b969bfc3e2d6b616, type: 3}
   gem: 1
-  cardSymbol: 0
+  cardSymbol: 4
   gemColor: 0
   magicType: 0
   effect: 14

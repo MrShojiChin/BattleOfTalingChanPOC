@@ -22,7 +22,12 @@
       "Bash(py --version)",
       "Bash(where python)",
       "Bash(where py)",
-      "Bash(py -c \":*)"
+      "Bash(py -c \":*)",
+      "Bash(wc -l Assets/Scripts/*.cs)",
+      "Bash(xargs grep -l \"PlayerPrefs\\\\|JsonUtility\\\\|serialize\\\\|[Ss]ave\\\\|[Ll]oad\")",
+      "Bash(xargs grep:*)",
+      "Bash(cd /d/UnityProject/\"My project\"/Assets/Card)",
+      "Bash(grep -r \"SwitchTurn\\\\|CleanupTempBuffs\\\\|end of turn\" Assets/Scripts/*.cs)"
     ]
   }
 }

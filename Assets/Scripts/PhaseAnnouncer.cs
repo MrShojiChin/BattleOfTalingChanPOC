@@ -44,10 +44,18 @@ public class PhaseAnnouncer : MonoBehaviour
     /// </summary>
     public void AnnouncePhase(string phaseName, Action onComplete = null)
     {
+        AnnouncePhase(phaseName, textColor, onComplete);
+    }
+
+    /// <summary>
+    /// Show phase announcement with a specific text color (for player-colored phases).
+    /// </summary>
+    public void AnnouncePhase(string phaseName, Color color, Action onComplete = null)
+    {
         if (currentAnim != null)
             StopCoroutine(currentAnim);
 
-        currentAnim = StartCoroutine(StompAnimation(phaseName, onComplete));
+        currentAnim = StartCoroutine(StompAnimation(phaseName, color, onComplete));
     }
 
     /// <summary>
@@ -56,21 +64,26 @@ public class PhaseAnnouncer : MonoBehaviour
     /// </summary>
     public Coroutine AnnouncePhaseCoroutine(string phaseName)
     {
+        return AnnouncePhaseCoroutine(phaseName, textColor);
+    }
+
+    public Coroutine AnnouncePhaseCoroutine(string phaseName, Color color)
+    {
         if (currentAnim != null)
             StopCoroutine(currentAnim);
 
-        currentAnim = StartCoroutine(StompAnimation(phaseName, null));
+        currentAnim = StartCoroutine(StompAnimation(phaseName, color, null));
         return currentAnim;
     }
 
-    private IEnumerator StompAnimation(string phaseName, Action onComplete)
+    private IEnumerator StompAnimation(string phaseName, Color color, Action onComplete)
     {
         // Setup
         if (overlay != null) overlay.SetActive(true);
         if (announceText != null)
         {
             announceText.text = phaseName;
-            announceText.color = textColor;
+            announceText.color = color;
         }
         if (canvasGroup != null) canvasGroup.alpha = 1f;
 

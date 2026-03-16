@@ -469,13 +469,22 @@ public class AvatarAbilityController : MonoBehaviour
     /// <param name="isAttacker">true if this avatar is the attacker, false if defender.</param>
     public void OnCombatEngagement(Card avatar, bool isAttacker)
     {
-        if (avatar == null) return;
+        StartCoroutine(OnCombatEngagementRoutine(avatar, isAttacker));
+    }
 
-        // ── CombatThonSoop needs sequential animation — run via coroutine ──
+    /// <summary>
+    /// Coroutine version of OnCombatEngagement — yields until all abilities resolve.
+    /// Use with: yield return StartCoroutine(...)
+    /// </summary>
+    public IEnumerator OnCombatEngagementRoutine(Card avatar, bool isAttacker)
+    {
+        if (avatar == null) yield break;
+
+        // ── CombatThonSoop needs sequential animation ──
         if (avatar.HasAbility(AvatarAbility.CombatThonSoop) && avatar.combatThonSoopMill > 0)
         {
-            StartCoroutine(CombatThonSoopSequence(avatar, isAttacker));
-            return; // AttackPowerBoost handled inside the coroutine
+            yield return StartCoroutine(CombatThonSoopSequence(avatar, isAttacker));
+            yield break; // AttackPowerBoost handled inside the coroutine
         }
 
         // ── AttackPowerBoost: triggers ONLY on attack (no CombatThonSoop) ──
