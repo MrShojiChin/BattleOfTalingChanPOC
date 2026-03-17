@@ -1,5 +1,6 @@
 public enum CardType
 {
     Avatar,
-    Magic
+    Magic,
+    Life
 }

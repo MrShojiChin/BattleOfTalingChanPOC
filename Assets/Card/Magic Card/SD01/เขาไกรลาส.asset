@@ -1,0 +1,26 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: d5514c5f6f6b6114d955facb76efd089, type: 3}
+  m_Name: "\u0E40\u0E02\u0E32\u0E44\u0E01\u0E23\u0E25\u0E32\u0E2A"
+  m_EditorClassIdentifier: Assembly-CSharp::MagicCardSO
+  cardName: "\u0E40\u0E02\u0E32\u0E44\u0E01\u0E23\u0E25\u0E32\u0E2A"
+  description: "POWER +1 \u0E43\u0E2B\u0E49 Avatar [\u0E40\u0E1E] \u0E1A\u0E19\u0E2A\u0E19\u0E32\u0E21\u0E17\u0E38\u0E01\u0E43\u0E1A"
+  cardCharacterSprite: {fileID: 21300000, guid: 3a7a7c3462eef2341afc2f869f037b40, type: 3}
+  gem: 2
+  cardSymbol: 0
+  gemColor: 0
+  magicType: 3
+  effect: 7
+  effectValue: 1
+  targetSymbol: 2
+  searchName: 
+  activateFromHellOnThonSoop: 0
