@@ -52,6 +52,9 @@ public class CardPlacePoint : MonoBehaviour
     /// <summary>True if this zone stacks multiple cards (Magic, Hell).</summary>
     public bool isMultiCardZone => zoneType == ZoneType.Magic || zoneType == ZoneType.Hell;
 
+    /// <summary>True if this single-card slot is empty and can accept a new card.</summary>
+    public bool IsEmpty => isMultiCardZone || activeCard == null;
+
     /// <summary>True if this slot belongs to the player whose turn it currently is.</summary>
     public bool IsCurrentPlayerZone()
     {

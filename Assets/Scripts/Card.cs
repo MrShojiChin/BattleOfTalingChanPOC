@@ -5,6 +5,7 @@ using UnityEngine.UI;
 using UnityEngine.EventSystems;
 using UnityEngine.InputSystem;
 using TMPro;
+using Photon.Pun;
 
 public class Card : MonoBehaviour, IPointerEnterHandler, IPointerExitHandler, IPointerDownHandler
 {
@@ -18,7 +19,17 @@ public class Card : MonoBehaviour, IPointerEnterHandler, IPointerExitHandler, IP
 
     [Header("Live variables (runtime)")]
     public int cost;
-    public int power;
+    [SerializeField] private int _power;
+    public int power
+    {
+        get => _power;
+        set
+        {
+            if (_power != value && cardType == CardType.Avatar && !inHand && assignedPlace != null)
+                Debug.Log($"[PowerTrack] {cardName}: power {_power} → {value} (base {basePower})", gameObject);
+            _power = value;
+        }
+    }
     public int gem;
     public CardSymbol cardSymbol;
     public string description;
@@ -105,6 +116,8 @@ public class Card : MonoBehaviour, IPointerEnterHandler, IPointerExitHandler, IP
     public bool isSelected;
 
     private Image cardImage;
+    private Color _defaultPowerColor = Color.white;  // Cached from prefab at setup
+    private bool _powerColorCached;
     private static float _lastHellClickTime;  // Static: shared across all cards in hell
 
     public LayerMask whatIsDesktop, whatIsPlacement;
@@ -233,6 +246,13 @@ public class Card : MonoBehaviour, IPointerEnterHandler, IPointerExitHandler, IP
             costText.gameObject.SetActive(cardType == CardType.Avatar);  // Only Avatars show cost
         }
 
+        // Cache the prefab's original power text color before any RefreshPowerDisplay call
+        if (powerText != null && !_powerColorCached)
+        {
+            _defaultPowerColor = powerText.color;
+            _powerColorCached = true;
+        }
+
         // Set power display from SO default value (visible in hand + on board for avatars)
         RefreshPowerDisplay();
     }
@@ -278,7 +298,26 @@ public class Card : MonoBehaviour, IPointerEnterHandler, IPointerExitHandler, IP
                     CardPlacePoint point = hit.collider.GetComponent<CardPlacePoint>();
                     if (point != null)
                     {
-                        HandleDrop(point);
+                        // In multiplayer: send RPC so both clients do the drop
+                        if (PhotonNetwork.IsConnected && GameManager.instance != null)
+                        {
+                            if (bc != null && bc.currentState == SummonState.ReadyToPlace && this == bc.pendingAvatar)
+                            {
+                                // Paid avatar → finalize summon on all clients
+                                GameManager.instance.photonView.RPC(
+                                    "RPC_FinalizeSummon", RpcTarget.All, point.gameObject.name);
+                            }
+                            else
+                            {
+                                // Free avatar or magic card → general drop
+                                GameManager.instance.photonView.RPC(
+                                    "RPC_FreePlayCard", RpcTarget.All, handPosition, point.gameObject.name);
+                            }
+                        }
+                        else
+                        {
+                            HandleDrop(point);
+                        }
                     }
                     else
                     {
@@ -310,13 +349,27 @@ public class Card : MonoBehaviour, IPointerEnterHandler, IPointerExitHandler, IP
     //  DROP HANDLER — routes based on context
     // ════════════════════════════════════════════════════════════════
 
+    /// <summary>
+    /// Public version of HandleDrop, called by network RPCs.
+    /// When a remote player drops a card, we simulate the same drop locally.
+    /// </summary>
+    public void NetworkDrop(CardPlacePoint point)
+    {
+        isSelected = false;
+        EnableInteraction();
+        HandleDrop(point);
+    }
+
     private void HandleDrop(CardPlacePoint point)
     {
         // Block all drops during React confirmation or Hell activation
         if (MagicController.instance != null
             && (MagicController.instance.magicState == MagicPlayState.AwaitingReactConfirm
              || MagicController.instance.magicState == MagicPlayState.AwaitingHellActivation))
+        {
+            Debug.LogWarning($"[HandleDrop] BLOCKED — magicState={MagicController.instance.magicState}. Card: {cardName}");
             return;
+        }
 
         BattleController bc = BattleController.instance;
 
@@ -554,6 +607,51 @@ public class Card : MonoBehaviour, IPointerEnterHandler, IPointerExitHandler, IP
         bool isLeftClick = eventData.button == PointerEventData.InputButton.Left;
         bool isRightClick = eventData.button == PointerEventData.InputButton.Right;
 
+        // ── MULTIPLAYER INPUT GATE ──────────────────────────────────
+        // In multiplayer: block input if it's not your turn or not your card.
+        // The PhotonNetwork.IsConnected check preserves local mode behavior.
+        //
+        // WHY THIS WORKS:
+        //   In local mode, IsConnected = false, so this block is skipped entirely.
+        //   In multiplayer, each player can only interact during their own turn.
+        //   Exception: Hell zone viewing (allowed anytime) and card preview (right-click).
+        if (PhotonNetwork.IsConnected)
+        {
+            // During mulligan: only the mulligan player's cards respond
+            if (GameManager.instance != null && GameManager.instance.isSetupPhase)
+            {
+                if (!NetworkIdentity.IsMyCard(cardOwner))
+                    return;
+            }
+            // During discard: only current player
+            else if (GameManager.instance != null && GameManager.instance.isDiscardPhase)
+            {
+                if (!NetworkIdentity.IsMyTurn)
+                    return;
+            }
+            // Normal play: only current player can interact (except hell zone viewing)
+            else if (!NetworkIdentity.IsMyTurn)
+            {
+                // Allow right-click preview and hell zone viewing even when not your turn
+                if (isRightClick)
+                {
+                    // Allow card preview
+                    if (inHand || assignedPlace != null)
+                        UIController.instance?.ShowCardPreview(this);
+                    return;
+                }
+                // Allow hell zone double-click viewing
+                if (assignedPlace != null && assignedPlace.isPlayerHellPoint)
+                {
+                    // Let the hell zone viewing code below handle it
+                }
+                else
+                {
+                    return; // Block all other input
+                }
+            }
+        }
+
         // Dismiss card preview on any left-click
         if (isLeftClick)
             UIController.instance?.HideCardPreview();
@@ -608,10 +706,20 @@ public class Card : MonoBehaviour, IPointerEnterHandler, IPointerExitHandler, IP
         if (AvatarAbilityController.instance != null
             && AvatarAbilityController.instance.IsSelectingJutiTarget)
         {
-            if (isLeftClick && !inHand && cardType == CardType.Avatar)
-                AvatarAbilityController.instance.HandleAvatarClickForJuti(this);
+            if (isLeftClick && !inHand && cardType == CardType.Avatar && assignedPlace != null)
+            {
+                if (PhotonNetwork.IsConnected && GameManager.instance != null)
+                    GameManager.instance.photonView.RPC("RPC_SelectJutiTarget", RpcTarget.All, assignedPlace.gameObject.name);
+                else
+                    AvatarAbilityController.instance.HandleAvatarClickForJuti(this);
+            }
             else if (isRightClick)
-                AvatarAbilityController.instance.CancelJutiSelection();
+            {
+                if (PhotonNetwork.IsConnected && GameManager.instance != null)
+                    GameManager.instance.photonView.RPC("RPC_CancelJuti", RpcTarget.All);
+                else
+                    AvatarAbilityController.instance.CancelJutiSelection();
+            }
             return; // Block all other interaction during Juti target selection
         }
 
@@ -629,7 +737,10 @@ public class Card : MonoBehaviour, IPointerEnterHandler, IPointerExitHandler, IP
         {
             if (isLeftClick && inHand)
             {
-                MagicController.instance.HandleHandCardClickForReactDiscard(this);
+                if (PhotonNetwork.IsConnected && GameManager.instance != null)
+                    GameManager.instance.photonView.RPC("RPC_SelectReactDiscard", RpcTarget.All, handPosition);
+                else
+                    MagicController.instance.HandleHandCardClickForReactDiscard(this);
             }
             else if (isRightClick)
             {
@@ -645,7 +756,10 @@ public class Card : MonoBehaviour, IPointerEnterHandler, IPointerExitHandler, IP
             if (isLeftClick && !inHand && cardType == CardType.Avatar
                 && cardOwner == GameManager.instance.currentPlayer)
             {
-                MagicController.instance.HandleAvatarClickForMod(this);
+                if (PhotonNetwork.IsConnected && GameManager.instance != null && assignedPlace != null)
+                    GameManager.instance.photonView.RPC("RPC_SelectModTarget", RpcTarget.All, assignedPlace.gameObject.name);
+                else
+                    MagicController.instance.HandleAvatarClickForMod(this);
             }
             else if (isRightClick)
             {
@@ -661,7 +775,10 @@ public class Card : MonoBehaviour, IPointerEnterHandler, IPointerExitHandler, IP
             if (isLeftClick && !inHand && cardType == CardType.Avatar
                 && cardOwner == GameManager.instance.currentPlayer)
             {
-                MagicController.instance.HandleAvatarClickForTempBoost(this);
+                if (PhotonNetwork.IsConnected && GameManager.instance != null && assignedPlace != null)
+                    GameManager.instance.photonView.RPC("RPC_SelectTempBoostTarget", RpcTarget.All, assignedPlace.gameObject.name);
+                else
+                    MagicController.instance.HandleAvatarClickForTempBoost(this);
             }
             else if (isRightClick)
             {
@@ -676,7 +793,10 @@ public class Card : MonoBehaviour, IPointerEnterHandler, IPointerExitHandler, IP
         {
             if (isLeftClick && inHand && cardOwner == GameManager.instance.currentPlayer)
             {
-                MagicController.instance.HandleHandCardClickForDiscard(this);
+                if (PhotonNetwork.IsConnected && GameManager.instance != null)
+                    GameManager.instance.photonView.RPC("RPC_SelectDiscardForEffect", RpcTarget.All, handPosition);
+                else
+                    MagicController.instance.HandleHandCardClickForDiscard(this);
             }
             else if (isRightClick)
             {
@@ -691,7 +811,16 @@ public class Card : MonoBehaviour, IPointerEnterHandler, IPointerExitHandler, IP
             Debug.Log($"[Card] LIFE card '{cardName}' clicked! Owner={cardOwner}, isFaceDown={isFaceDown}, IsBattle={GameManager.instance?.IsBattlePhase()}");
 
             if (GameManager.instance != null && GameManager.instance.IsBattlePhase())
-                CombatController.instance.HandleCardClick(this, isRightClick);
+            {
+                if (isRightClick)
+                {
+                    NetworkCombatClick(this, true);
+                }
+                else
+                {
+                    NetworkCombatClick(this, false);
+                }
+            }
             else
                 Debug.Log($"[Card] LIFE card '{cardName}' clicked outside Battle Phase — ignored.");
             return; // LIFE cards only respond during Battle Phase
@@ -701,7 +830,7 @@ public class Card : MonoBehaviour, IPointerEnterHandler, IPointerExitHandler, IP
         if (GameManager.instance != null && GameManager.instance.IsBattlePhase())
         {
             if (!inHand) // Only board cards respond during Battle Phase
-                CombatController.instance.HandleCardClick(this, isRightClick);
+                NetworkCombatClick(this, isRightClick);
             return; // No other card logic during Battle Phase
         }
 
@@ -710,13 +839,19 @@ public class Card : MonoBehaviour, IPointerEnterHandler, IPointerExitHandler, IP
         {
             if (bc.currentTributes.Contains(this))
             {
-                bc.ReturnTribute(this);
+                if (PhotonNetwork.IsConnected && GameManager.instance != null)
+                    GameManager.instance.photonView.RPC("RPC_ReturnTribute", RpcTarget.All, handPosition);
+                else
+                    bc.ReturnTribute(this);
                 return;
             }
 
             if (this == bc.pendingAvatar)
             {
-                bc.CancelFullSummon();
+                if (PhotonNetwork.IsConnected && GameManager.instance != null)
+                    GameManager.instance.photonView.RPC("RPC_CancelSummon", RpcTarget.All);
+                else
+                    bc.CancelFullSummon();
                 return;
             }
 
@@ -771,7 +906,10 @@ public class Card : MonoBehaviour, IPointerEnterHandler, IPointerExitHandler, IP
             }
             else if (isRightClick)
             {
-                bc.CancelFullSummon();
+                if (PhotonNetwork.IsConnected && GameManager.instance != null)
+                    GameManager.instance.photonView.RPC("RPC_CancelSummon", RpcTarget.All);
+                else
+                    bc.CancelFullSummon();
             }
             return;
         }
@@ -781,7 +919,13 @@ public class Card : MonoBehaviour, IPointerEnterHandler, IPointerExitHandler, IP
         {
             if (this == bc.pendingAvatar)
             {
-                if (isRightClick) bc.CancelFullSummon();
+                if (isRightClick)
+                {
+                    if (PhotonNetwork.IsConnected && GameManager.instance != null)
+                        GameManager.instance.photonView.RPC("RPC_CancelSummon", RpcTarget.All);
+                    else
+                        bc.CancelFullSummon();
+                }
                 return;
             }
 
@@ -789,12 +933,20 @@ public class Card : MonoBehaviour, IPointerEnterHandler, IPointerExitHandler, IP
             {
                 if (isLeftClick)
                 {
-                    bc.ToggleTribute(this);
+                    if (PhotonNetwork.IsConnected && GameManager.instance != null)
+                        GameManager.instance.photonView.RPC("RPC_ToggleTribute", RpcTarget.All, handPosition);
+                    else
+                        bc.ToggleTribute(this);
                 }
                 else if (isRightClick)
                 {
                     if (bc.currentTributes.Contains(this))
-                        bc.ReturnTribute(this);
+                    {
+                        if (PhotonNetwork.IsConnected && GameManager.instance != null)
+                            GameManager.instance.photonView.RPC("RPC_ReturnTribute", RpcTarget.All, handPosition);
+                        else
+                            bc.ReturnTribute(this);
+                    }
                 }
             }
             return;
@@ -810,15 +962,34 @@ public class Card : MonoBehaviour, IPointerEnterHandler, IPointerExitHandler, IP
                     Debug.Log($"[Card] {cardName}: Cannot be summoned from hand (ability)!");
                     return;
                 }
-                bool summonInitiated = bc.InitiateSummon(this);
-                if (!summonInitiated)
+
+                if (PhotonNetwork.IsConnected && GameManager.instance != null)
                 {
-                    // Free avatar (cost 0) — drag directly, slide hand down
-                    isSelected = true;
-                    DisableInteraction();
-                    justPressed = true;
-                    HandController theHC = OwnerHand;
-                    if (theHC != null) theHC.SlideDown();
+                    // In multiplayer: send RPC to initiate summon
+                    GameManager.instance.photonView.RPC("RPC_InitiateSummon", RpcTarget.All, handPosition);
+                    // If it's a free avatar (cost 0), InitiateSummon returns false
+                    // and the drag is handled by the RPC_FreePlayCard path
+                    if (cost <= 0)
+                    {
+                        isSelected = true;
+                        DisableInteraction();
+                        justPressed = true;
+                        HandController theHC = OwnerHand;
+                        if (theHC != null) theHC.SlideDown();
+                    }
+                }
+                else
+                {
+                    bool summonInitiated = bc.InitiateSummon(this);
+                    if (!summonInitiated)
+                    {
+                        // Free avatar (cost 0) — drag directly, slide hand down
+                        isSelected = true;
+                        DisableInteraction();
+                        justPressed = true;
+                        HandController theHC = OwnerHand;
+                        if (theHC != null) theHC.SlideDown();
+                    }
                 }
                 return;
             }
@@ -840,6 +1011,15 @@ public class Card : MonoBehaviour, IPointerEnterHandler, IPointerExitHandler, IP
 
     public void PlaceOnBoard(CardPlacePoint point)
     {
+        // Guard: prevent stacking on an occupied single-card slot
+        if (!point.isMultiCardZone && point.activeCard != null && point.activeCard != this)
+        {
+            Debug.LogError($"[PlaceOnBoard] BLOCKED: {cardName} tried to stack on {point.name} " +
+                           $"which already has {point.activeCard.cardName}!");
+            ReturnToHand();
+            return;
+        }
+
         point.activeCard = this;
         assignedPlace = point;
         isSelected = false;
@@ -863,6 +1043,10 @@ public class Card : MonoBehaviour, IPointerEnterHandler, IPointerExitHandler, IP
         // Recalculate SymbolAura buffs (new avatar on field may gain or provide aura)
         if (cardType == CardType.Avatar && AvatarAbilityController.instance != null)
             AvatarAbilityController.instance.RecalculateAllAuraBuffs();
+
+        // Delayed refresh: card is still Lerp-moving, TMP mesh can get overwritten
+        if (cardType == CardType.Avatar)
+            RefreshPowerDisplayDelayed();
     }
 
     /// <summary>
@@ -872,24 +1056,63 @@ public class Card : MonoBehaviour, IPointerEnterHandler, IPointerExitHandler, IP
 
     public void RefreshPowerDisplay()
     {
-        if (powerText != null)
-        {
-            if (cardType == CardType.Avatar)
-            {
-                powerText.gameObject.SetActive(true);
+        if (powerText == null) return;
 
-                if (power > basePower)
-                    powerText.text = $"<color=#79B445>{power}</color>";
-                else if (power < basePower)
-                    powerText.text = $"<color=#D44400>{power}</color>";
-                else
-                    powerText.text = power.ToString();
+        if (cardType == CardType.Avatar)
+        {
+            powerText.gameObject.SetActive(true);
+
+            // Cache prefab color on first call (safety net if SetupCard hasn't run yet)
+            if (!_powerColorCached)
+            {
+                _defaultPowerColor = powerText.color;
+                _powerColorCached = true;
+            }
+
+            // Always display current power value — basePower is never modified
+            powerText.text = power.ToString();
+
+            // Color based on current power vs immutable basePower
+            if (power > basePower)
+            {
+                powerText.color = new Color32(0x79, 0xB4, 0x45, 0xFF); // Green — buffed
+                Debug.Log($"[PowerDisplay] {cardName}: showing {power} in GREEN (base {basePower}), text='{powerText.text}'");
+            }
+            else if (power < basePower)
+            {
+                powerText.color = new Color32(0xD4, 0x44, 0x00, 0xFF); // Red — debuffed
             }
             else
             {
-                powerText.gameObject.SetActive(false);
+                powerText.color = _defaultPowerColor; // Original prefab color — base power
             }
+
+            powerText.ForceMeshUpdate();
         }
+        else
+        {
+            powerText.gameObject.SetActive(false);
+        }
+    }
+
+    /// <summary>
+    /// Schedule a delayed power display refresh. Use after placing a card on board
+    /// where the Lerp movement can cause TMP mesh updates to be overwritten by Canvas.
+    /// </summary>
+    public void RefreshPowerDisplayDelayed(float delay = 0.15f)
+    {
+        RefreshPowerDisplay(); // Immediate attempt
+        if (gameObject.activeInHierarchy)
+            StartCoroutine(DelayedPowerRefresh(delay));
+    }
+
+    private IEnumerator DelayedPowerRefresh(float delay)
+    {
+        yield return new WaitForSeconds(delay);
+        RefreshPowerDisplay();
+        // Second pass after card has mostly settled
+        yield return new WaitForSeconds(0.3f);
+        RefreshPowerDisplay();
     }
 
     /// <summary>Check if this avatar has a specific ability flag.</summary>
@@ -1069,6 +1292,45 @@ public class Card : MonoBehaviour, IPointerEnterHandler, IPointerExitHandler, IP
             if (handPosition < theHC.cardPositions.Count)
                 MoveToPoint(theHC.cardPositions[handPosition], theHC.minPos.rotation);
         }
+    }
+
+    /// <summary>
+    /// Route a combat click through the network (or locally if not connected).
+    /// In multiplayer, sends an RPC with the zone name so both clients resolve combat identically.
+    /// </summary>
+    private void NetworkCombatClick(Card card, bool isRightClick)
+    {
+        if (isRightClick)
+        {
+            if (PhotonNetwork.IsConnected && GameManager.instance != null)
+                GameManager.instance.photonView.RPC("RPC_CancelAttack", RpcTarget.All);
+            else
+                CombatController.instance.CancelAttackSelection();
+            return;
+        }
+
+        if (!PhotonNetwork.IsConnected)
+        {
+            CombatController.instance.HandleCardClick(card, false);
+            return;
+        }
+
+        // Identify the card by its zone name
+        string zoneName = card.assignedPlace != null ? card.assignedPlace.gameObject.name : "";
+        if (string.IsNullOrEmpty(zoneName))
+        {
+            Debug.LogWarning("[Card] NetworkCombatClick: card has no assigned zone!");
+            return;
+        }
+
+        // Route based on combat state
+        CombatState state = CombatController.instance.combatState;
+        if (state == CombatState.SelectingAttacker)
+            GameManager.instance.photonView.RPC("RPC_SelectAttacker", RpcTarget.All, zoneName);
+        else if (state == CombatState.SelectingTarget)
+            GameManager.instance.photonView.RPC("RPC_SelectTarget", RpcTarget.All, zoneName);
+        else if (state == CombatState.AwaitingLifeReveal)
+            GameManager.instance.photonView.RPC("RPC_LifeRevealContinue", RpcTarget.All);
     }
 
     // ── LIFE CARD ────────────────────────────────────────────────

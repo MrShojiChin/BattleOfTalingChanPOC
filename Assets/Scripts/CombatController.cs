@@ -2,6 +2,7 @@ using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.InputSystem;
+using Photon.Pun;
 
 /// <summary>
 /// Handles all Battle Phase combat logic.
@@ -56,13 +57,19 @@ public class CombatController : MonoBehaviour
         if (gm == null || gm.isGameOver || !gm.IsBattlePhase()) return;
         if (Mouse.current == null) return;
 
+        // In multiplayer: only process input if it's our turn
+        if (PhotonNetwork.IsConnected && !NetworkIdentity.IsMyTurn) return;
+
         // ── Click-anywhere to dismiss Life Reveal panel ──
         if (combatState == CombatState.AwaitingLifeReveal)
         {
             if (Mouse.current.leftButton.wasPressedThisFrame
                 || Mouse.current.rightButton.wasPressedThisFrame)
             {
-                OnLifeRevealContinue();
+                if (PhotonNetwork.IsConnected && GameManager.instance != null)
+                    GameManager.instance.photonView.RPC("RPC_LifeRevealContinue", RpcTarget.All);
+                else
+                    OnLifeRevealContinue();
             }
             return; // Block all other combat input while panel is shown
         }
@@ -74,7 +81,18 @@ public class CombatController : MonoBehaviour
             if (lifeCard != null)
             {
                 Debug.Log($"[Combat] Direct-detected click on LIFE card '{lifeCard.cardName}'");
-                HandleCardClick(lifeCard, false);
+                if (PhotonNetwork.IsConnected && GameManager.instance != null && lifeCard.assignedPlace != null)
+                {
+                    string zoneName = lifeCard.assignedPlace.gameObject.name;
+                    if (combatState == CombatState.SelectingAttacker)
+                        GameManager.instance.photonView.RPC("RPC_SelectAttacker", RpcTarget.All, zoneName);
+                    else if (combatState == CombatState.SelectingTarget)
+                        GameManager.instance.photonView.RPC("RPC_SelectTarget", RpcTarget.All, zoneName);
+                }
+                else
+                {
+                    HandleCardClick(lifeCard, false);
+                }
             }
         }
         // Detect right-click (for cancel)
@@ -83,7 +101,10 @@ public class CombatController : MonoBehaviour
             Card lifeCard = RaycastForLifeCard();
             if (lifeCard != null)
             {
-                HandleCardClick(lifeCard, true);
+                if (PhotonNetwork.IsConnected && GameManager.instance != null)
+                    GameManager.instance.photonView.RPC("RPC_CancelAttack", RpcTarget.All);
+                else
+                    HandleCardClick(lifeCard, true);
             }
         }
     }
@@ -402,10 +423,46 @@ public class CombatController : MonoBehaviour
     //  STEP 3 — RESOLVE COMBAT
     // ════════════════════════════════════════════════════════════════
 
+    /// <summary>
+    /// In multiplayer: only MasterClient calculates combat outcome and broadcasts via RPC.
+    /// In local/offline mode: resolves directly.
+    /// </summary>
     private void ResolveCombat(Card attacker, Card defender)
     {
-        int atkPower = attacker.power;
-        int defPower = defender.power;
+        if (PhotonNetwork.IsConnected)
+        {
+            // Only MasterClient determines combat outcome — prevents desync
+            if (!PhotonNetwork.IsMasterClient) return;
+
+            int atkPower = attacker.power;
+            int defPower = defender.power;
+            string atkZone = attacker.assignedPlace != null ? attacker.assignedPlace.gameObject.name : "";
+            string defZone = defender.assignedPlace != null ? defender.assignedPlace.gameObject.name : "";
+
+            GameManager.instance.photonView.RPC("RPC_ResolveCombatResult",
+                RpcTarget.All, atkZone, defZone, atkPower, defPower);
+            return;
+        }
+
+        // Local/offline mode: resolve directly
+        ExecuteCombatResult(attacker, defender, attacker.power, defender.power);
+    }
+
+    /// <summary>
+    /// Applies the authoritative combat result on all clients.
+    /// Called from RPC_ResolveCombatResult (multiplayer) or ResolveCombat (local).
+    /// Power values come from MasterClient to ensure both clients agree.
+    /// </summary>
+    public void ExecuteCombatResult(Card attacker, Card defender, int atkPower, int defPower)
+    {
+        // Sync local power to authoritative values from MasterClient
+        if (PhotonNetwork.IsConnected)
+        {
+            attacker.power = atkPower;
+            attacker.RefreshPowerDisplay();
+            defender.power = defPower;
+            defender.RefreshPowerDisplay();
+        }
 
         Debug.Log($"[Combat] {attacker.cardName} (ATK {atkPower}) vs {defender.cardName} (DEF {defPower})");
         if (GameplayLogger.instance != null)
@@ -472,14 +529,6 @@ public class CombatController : MonoBehaviour
             StartCoroutine(DrawRotateAndSendToHell(attacker, defender));
             return;
         }
-
-        // Clear target highlights and refresh HUD
-        HighlightValidTargets(false);
-        UIController.instance.UpdateGameInfo();
-
-        // Reset for next attack
-        selectedAttacker = null;
-        combatState = CombatState.SelectingAttacker;
     }
 
     // ════════════════════════════════════════════════════════════════
@@ -791,7 +840,12 @@ public class CombatController : MonoBehaviour
                 card.assignedPlace.RemoveCard(card);
             else
             {
-                card.assignedPlace.activeCard = null;
+                // Only clear activeCard if this card is actually the one registered
+                if (card.assignedPlace.activeCard == card)
+                    card.assignedPlace.activeCard = null;
+                else if (card.assignedPlace.activeCard != null)
+                    Debug.LogWarning($"[SendToHell] {card.cardName} was in {card.assignedPlace.name} " +
+                                     $"but activeCard is {card.assignedPlace.activeCard.cardName} — possible stacking bug!");
                 card.assignedPlace = null;
             }
         }

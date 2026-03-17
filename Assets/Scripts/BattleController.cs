@@ -173,6 +173,14 @@ public class BattleController : MonoBehaviour
     {
         if (currentState != SummonState.ReadyToPlace || pendingAvatar == null) return;
 
+        // Guard: prevent placing on an already-occupied slot
+        if (placePoint.activeCard != null)
+        {
+            Debug.LogWarning($"[Summon] BLOCKED: {placePoint.name} already has {placePoint.activeCard.cardName}! Returning to hand.");
+            CancelFullSummon();
+            return;
+        }
+
         // Place avatar on board
         placePoint.activeCard = pendingAvatar;
         pendingAvatar.assignedPlace = placePoint;
@@ -225,12 +233,32 @@ public class BattleController : MonoBehaviour
         if (MagicController.instance != null)
             MagicController.instance.OnAvatarSummoned(summonedAvatar);
 
+        // Check if React was triggered (async resolution pending for P2)
+        bool reactTriggered = MagicController.instance != null
+            && (MagicController.instance.magicState == MagicPlayState.AwaitingReactConfirm
+             || MagicController.instance.magicState == MagicPlayState.SelectingReactDiscard);
+
         // Trigger Juti abilities (on-summon-from-cost path only)
         if (AvatarAbilityController.instance != null)
         {
-            AvatarAbilityController.instance.OnAvatarSummonedFromCost(summonedAvatar);
+            if (reactTriggered)
+            {
+                // React is pending — defer Juti until React resolves
+                // This prevents both players' UIs from overlapping
+                AvatarAbilityController.instance.DeferJutiForReact(summonedAvatar);
+            }
+            else
+            {
+                // No React — run Juti immediately
+                AvatarAbilityController.instance.OnAvatarSummonedFromCost(summonedAvatar);
+            }
             AvatarAbilityController.instance.RecalculateAllAuraBuffs();
         }
+
+        // Safety: delayed refresh after ALL buffs (land, aura, etc.) are applied.
+        // The card is still Lerp-moving to its board position, so TMP mesh updates
+        // can be overwritten by Canvas layout passes. Delayed refresh ensures it sticks.
+        summonedAvatar.RefreshPowerDisplayDelayed();
 
         UIController.instance?.UpdateGameInfo();
     }
